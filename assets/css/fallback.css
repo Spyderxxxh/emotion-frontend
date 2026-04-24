@@ -1,0 +1,36 @@
+/* Minimal fallback styles to keep UI usable when Tailwind CDN is unavailable */
+:root { --primary:#3B82F6; --secondary:#8B5CF6; }
+* { box-sizing: border-box; }
+body { font-family: Inter, system-ui, sans-serif; color:#1f2937; background:#f9fafb; }
+.hidden { display:none !important; }
+.visible { visibility:visible !important; }
+.opacity-0 { opacity:0 !important; }
+.opacity-100 { opacity:1 !important; }
+.btn-primary { background: linear-gradient(90deg, var(--primary), var(--secondary)); color:#fff; padding:0.5rem 1rem; border-radius:0.5rem; transition: opacity .3s; }
+.btn-primary:hover { opacity:.9; }
+.btn-secondary { border:1px solid var(--primary); color: var(--primary); padding:0.5rem 1rem; border-radius:0.5rem; transition: background-color .3s, color .3s; }
+.btn-secondary:hover { background: var(--primary); color:#fff; }
+.tab-btn { padding:0.5rem 1rem; border-bottom:2px solid transparent; color:#374151; }
+.tab-active { border-bottom-color: var(--primary); color: var(--primary); }
+.emotion-bar { height:1rem; border-radius:9999px; transition: width .5s ease; background-color: var(--primary); }
+.bg-primary { background-color: var(--primary); }
+.text-primary { color: var(--primary); }
+.bg-white { background-color: #fff; }
+.bg-gray-50 { background-color: #f9fafb; }
+.bg-gray-200 { background-color: #e5e7eb; }
+.text-gray-600 { color: #4b5563; }
+.text-gray-700 { color: #374151; }
+.rounded-lg { border-radius: 0.5rem; }
+.rounded-xl { border-radius: 0.75rem; }
+.shadow-md { box-shadow: 0 4px 6px rgba(0,0,0,.1); }
+.container { max-width: 1200px; margin: 0 auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.px-4 { padding-left: 1rem; padding-right:1rem; }
+.py-4 { padding-top:1rem; padding-bottom:1rem; }
+.text-center { text-align:center; }
+.list-inside { padding-left:0; }
+.list-disc { list-style-type: disc; padding-left: 1.25rem; }
+.transition-all { transition: all .3s ease; }
+.duration-300 { transition-duration: .3s; }
+.gradient-bg { background: linear-gradient(90deg, var(--primary), var(--secondary)); }
+.gradient-text { background: linear-gradient(90deg, var(--primary), var(--secondary)); -webkit-background-clip: text; background-clip: text; color: transparent; }

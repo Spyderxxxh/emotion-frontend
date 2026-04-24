@@ -1,0 +1,3165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 放宽 WebAssembly 编译限制但仍禁止普通 eval；允许本地与必要外部资源（OpenCV、Font Awesome、远程图片、DeepSeek） -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline' https://docs.opencv.org; connect-src 'self' ws: wss: http: https: data:; img-src 'self' data: blob: https:; media-src 'self' blob:; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net data:">
+    <title>多模心探 - 多模态情感分析系统</title>
+    <script>
+      (function() {
+        const isSecure = window.location.protocol === 'https:';
+        const wsProtocol = isSecure ? 'wss:' : 'ws:';
+        const origin = window.location.origin;
+        
+        window.SERVICE_ENDPOINTS = {
+          main: origin,
+          // 统一使用相对路径，由后端网关（Blink Server 9999）负责分发和代理
+          blinkWS: `${wsProtocol}//${window.location.host}/ws`,
+          ocr: `${origin}/ocr`,
+          llm: `${origin}/llm`,
+          chat: `${origin}/chat`,
+          blinkHTTP: `${origin}/blink`
+        };
+      })();
+    </script>
+    <!-- 本地构建的 Tailwind 样式（若存在则优先使用） -->
+    <link href="assets/css/tailwind.css" rel="stylesheet">
+    <!-- 本地回退样式（当 Tailwind 不可用时保障基本样式） -->
+    <link href="assets/css/fallback.css" rel="stylesheet">
+    <!-- v1.2 UI 增强：温暖治愈风格 + 微交互动画 -->
+    <link href="assets/css/ui-enhance.css" rel="stylesheet">
+    <style>
+      /* 强制覆盖选中效果 */
+      .assessment-option.selected {
+        background-color: #0891b2 !important; /* 明显的深蓝色背景 */
+        border-color: #0891b2 !important;
+        color: #ffffff !important; /* 文字变白 */
+        box-shadow: 0 4px 12px rgba(8, 145, 178, 0.3) !important;
+        transform: translateY(-2px) scale(1.02);
+      }
+      .assessment-option {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .assessment-option:hover:not(.selected) {
+        border-color: #0891b2;
+        background-color: rgba(8, 145, 178, 0.05);
+      }
+    </style>
+    <!-- Font Awesome（保留 CDN，如果不可用则图标可能不显示） -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- 本地静态库：GSAP / AOS（替换 CDN） -->
+    <script src="src/vendor/gsap.min.js"></script>
+    <script src="src/vendor/aos.js"></script>
+    <!-- 加载 OpenCV.js 以启用基于 Haar 的人脸检测（需要允许 unsafe-eval） -->
+    <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+    
+    <!-- Tailwind Configuration（当使用 CDN 时有效；离线预览可忽略） -->
+    <script type="text/plain" data-migrated="true">
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0891b2',
+                        secondary: '#14b8a6',
+                        accent: '#f59e0b',
+                        dark: '#1E293B',
+                        light: '#F8FAFC'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .gradient-text {
+                @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;
+            }
+            
+            .gradient-bg {
+                @apply bg-gradient-to-r from-primary to-secondary;
+            }
+            
+            .card-hover {
+                @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+            }
+            
+            .btn-primary {
+                @apply gradient-bg text-white font-medium py-2 px-4 rounded-lg transition-all duration-300 hover:shadow-md hover:opacity-90;
+            }
+            
+            .btn-secondary {
+                @apply border border-primary text-primary font-medium py-2 px-4 rounded-lg transition-all duration-300 hover:bg-primary hover:text-white;
+            }
+            
+            .input-field {
+                @apply w-full border border-gray-400 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 placeholder-gray-500;
+            }
+            
+            .tab-active {
+                @apply border-b-2 border-primary text-primary;
+            }
+            
+            .emotion-bar {
+                @apply h-full rounded-full transition-all duration-500 ease-out;
+            }
+            
+            .heart-beat {
+                animation: heartbeat 1.5s ease-in-out infinite;
+            }
+            
+            @keyframes heartbeat {
+                0% { transform: scale(1); }
+                14% { transform: scale(1.1); }
+                28% { transform: scale(1); }
+                42% { transform: scale(1.15); }
+                70% { transform: scale(1); }
+            }
+            
+            /* 提升可访问性的辅助文字颜色 */
+            .text-accessible {
+                color: #374151; /* gray-700 - 对比度 7.5:1 */
+            }
+            
+            .text-accessible-secondary {
+                color: #4B5563; /* gray-600 - 对比度 5.9:1 */
+            }
+
+            /* Assessment card-style radio buttons */
+            .assessment-option:has(input:checked) {
+                border-color: #0891b2;
+                background-color: rgba(8, 145, 178, 0.08);
+                color: #0891b2;
+            }
+            .assessment-option:has(input:checked) span {
+                color: #0891b2;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="h-10 w-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #0891b2 0%, #14b8a6 100%);" aria-hidden="true">
+                        <svg viewBox="0 0 32 32" class="w-6 h-6 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+                            <path d="M8 16 Q12 10 16 16 T24 16" stroke="currentColor" stroke-width="2.5" fill="none"/>
+                            <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                        </svg>
+                    </div>
+                <h1 class="text-2xl font-bold gradient-text" aria-label="多模心探">多模心探</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <!-- User Profile -->
+                <div class="relative" id="user-profile">
+                    <button class="flex items-center space-x-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" id="profile-button" aria-haspopup="true" aria-expanded="false">
+                        <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-2 border-primary">
+                            <i class="fa fa-user text-gray-500 text-xl"></i>
+                            <img id="user-avatar" class="w-full h-full object-cover hidden" alt="User Avatar">
+                        </div>
+                        <span id="user-name" class="hidden md:inline-block text-gray-700 font-medium">用户</span>
+                        <i class="fa fa-caret-down text-gray-500"></i>
+                    </button>
+                    
+                    <!-- Profile Dropdown -->
+                    <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 hidden" id="profile-dropdown">
+                        <div class="px-4 py-2 border-b">
+                            <p class="text-sm text-gray-500">个人设置</p>
+                        </div>
+                        <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="change-avatar-btn">
+                            <i class="fa fa-camera mr-2 text-primary"></i> 更换头像
+                        </button>
+                        <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="change-name-btn">
+                            <i class="fa fa-pencil mr-2 text-primary"></i> 修改名字
+                        </button>
+                        <div class="px-4 py-2 border-t">
+                            <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="logout-btn">
+                                <i class="fa fa-sign-out mr-2 text-red-500"></i> 退出
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Avatar Upload Input (Hidden) -->
+                    <input type="file" id="avatar-upload" name="avatar" class="hidden" accept="image/*">
+                </div>
+                
+                <!-- Mobile Menu Button -->
+                <button class="md:hidden text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary rounded-lg p-1" id="mobile-menu-button" aria-label="打开菜单" aria-expanded="false">
+                    <i class="fa fa-bars text-xl" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+        <!-- Mobile Menu -->
+        <div class="md:hidden hidden bg-white shadow-md absolute w-full z-50" id="mobile-menu">
+            <div class="container mx-auto px-4 py-2 flex flex-col space-y-3">
+                <a href="#" class="text-gray-700 hover:text-primary transition-colors py-2">首页</a>
+                <a href="#features" class="text-gray-700 hover:text-primary transition-colors py-2">功能</a>
+                <a href="#about" class="text-gray-700 hover:text-primary transition-colors py-2">关于</a>
+                <a href="#contact" class="text-gray-700 hover:text-primary transition-colors py-2">联系我们</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="bg-gradient-to-br from-blue-50 to-purple-50 py-16 md:py-24">
+        <div class="container mx-auto px-4 flex flex-col md:flex-row items-center">
+            <div class="md:w-1/2 mb-8 md:mb-0" data-aos="fade-right">
+                <h1 class="text-4xl md:text-5xl font-bold mb-4">
+                    <span class="gradient-text">多模态情感</span>分析
+                </h1>
+                <p class="text-lg text-gray-600 mb-6">
+                    利用人工智能的力量，从图像、音频、视频和生理信号中分析情感。
+                    通过我们全面的分析平台，深入了解人类情感。
+                </p>
+                <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                    <button class="btn-primary" id="get-started-btn">
+                        <i class="fa fa-arrow-right mr-2"></i> 开始使用
+                    </button>
+                    <button class="btn-secondary" id="register-btn">
+                        <i class="fa fa-user-plus mr-2"></i> 注册账号
+                    </button>
+                </div>
+            </div>
+            <div class="md:w-1/2 flex justify-center" data-aos="fade-left">
+                <div class="w-full max-w-md rounded-lg shadow-xl bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-5">
+                    <svg viewBox="0 0 400 300" class="w-full h-auto scale-105" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Background Circuit Pattern -->
+                        <defs>
+                            <linearGradient id="brainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.1" />
+                                <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:0.1" />
+                            </linearGradient>
+                            <linearGradient id="heartGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#ef4444;stop-opacity:0.1" />
+                                <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:0.1" />
+                            </linearGradient>
+                        </defs>
+                        
+                        <!-- Main Brain/AI Center -->
+                        <circle cx="200" cy="150" r="80" fill="url(#brainGradient)" stroke="#3b82f6" stroke-width="2" opacity="0.8"/>
+                        
+                        <!-- Brain Waves/Neural Network -->
+                        <path d="M120 150 Q160 120 200 150 T280 150" stroke="#3b82f6" stroke-width="3" fill="none" opacity="0.7">
+                            <animate attributeName="d" values="M120 150 Q160 120 200 150 T280 150;M120 150 Q160 180 200 150 T280 150;M120 150 Q160 120 200 150 T280 150" dur="3s" repeatCount="indefinite"/>
+                        </path>
+                        <path d="M130 130 Q170 100 200 130 T270 130" stroke="#8b5cf6" stroke-width="2" fill="none" opacity="0.5">
+                            <animate attributeName="d" values="M130 130 Q170 100 200 130 T270 130;M130 130 Q170 160 200 130 T270 130;M130 130 Q170 100 200 130 T270 130" dur="2.5s" repeatCount="indefinite"/>
+                        </path>
+                        
+                        <!-- OCR Analysis Module -->
+                        <circle cx="120" cy="80" r="25" fill="rgba(59, 130, 246, 0.2)" stroke="#3b82f6" stroke-width="1.5"/>
+                        <rect x="110" y="70" width="20" height="20" rx="2" fill="none" stroke="#3b82f6" stroke-width="1"/>
+                        <line x1="112" y1="75" x2="128" y2="75" stroke="#3b82f6" stroke-width="0.8"/>
+                        <line x1="112" y1="80" x2="125" y2="80" stroke="#3b82f6" stroke-width="0.8"/>
+                        <line x1="112" y1="85" x2="128" y2="85" stroke="#3b82f6" stroke-width="0.8"/>
+                        <text x="120" y="115" text-anchor="middle" font-size="10" fill="#3b82f6" font-weight="500">OCR分析</text>
+                        
+                        <!-- Voice Analysis Module -->
+                        <circle cx="280" cy="80" r="25" fill="rgba(139, 92, 246, 0.2)" stroke="#8b5cf6" stroke-width="1.5"/>
+                        <path d="M260 80 Q270 70 280 80 T300 80" stroke="#8b5cf6" stroke-width="2" fill="none">
+                            <animate attributeName="d" values="M260 80 Q270 70 280 80 T300 80;M260 80 Q270 90 280 80 T300 80;M260 80 Q270 70 280 80 T300 80" dur="1.5s" repeatCount="indefinite"/>
+                        </path>
+                        <circle cx="270" cy="80" r="3" fill="#8b5cf6">
+                            <animate attributeName="r" values="3;5;3" dur="1.5s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle cx="290" cy="80" r="3" fill="#8b5cf6">
+                            <animate attributeName="r" values="3;5;3" dur="1.5s" repeatCount="indefinite"/>
+                        </circle>
+                        <text x="280" y="115" text-anchor="middle" font-size="10" fill="#8b5cf6" font-weight="500">语音分析</text>
+                        
+                        <!-- rPPG Heart Rate Module -->
+                        <circle cx="120" cy="220" r="25" fill="url(#heartGradient)" stroke="#ef4444" stroke-width="1.5"/>
+                        <path d="M110 215 L110 225 L120 235 L130 225 L130 215 Q120 205 110 215 Z" fill="#ef4444" opacity="0.8">
+                            <animateTransform attributeName="transform" type="scale" values="1;1.1;1" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                        <text x="120" y="250" text-anchor="middle" font-size="10" fill="#ef4444" font-weight="500">rPPG心率</text>
+                        
+                        <!-- Image Analysis Module -->
+                        <circle cx="280" cy="220" r="25" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981" stroke-width="1.5"/>
+                        <rect x="265" y="210" width="30" height="20" rx="3" fill="none" stroke="#10b981" stroke-width="1"/>
+                        <circle cx="275" cy="215" r="2" fill="#10b981" opacity="0.7"/>
+                        <circle cx="285" cy="220" r="2.5" fill="#10b981"/>
+                        <circle cx="275" cy="225" r="2" fill="#10b981" opacity="0.7"/>
+                        <text x="280" y="250" text-anchor="middle" font-size="10" fill="#10b981" font-weight="500">影像分析</text>
+                        
+                        <!-- Data Flow Lines -->
+                        <path d="M145 80 Q170 100 200 150" stroke="#3b82f6" stroke-width="1.5" fill="none" opacity="0.6" stroke-dasharray="5,5">
+                            <animate attributeName="stroke-dashoffset" values="0;-10" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                        <path d="M255 80 Q230 100 200 150" stroke="#8b5cf6" stroke-width="1.5" fill="none" opacity="0.6" stroke-dasharray="5,5">
+                            <animate attributeName="stroke-dashoffset" values="0;-10" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                        <path d="M145 220 Q170 180 200 150" stroke="#ef4444" stroke-width="1.5" fill="none" opacity="0.6" stroke-dasharray="5,5">
+                            <animate attributeName="stroke-dashoffset" values="0;-10" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                        <path d="M255 220 Q230 180 200 150" stroke="#10b981" stroke-width="1.5" fill="none" opacity="0.6" stroke-dasharray="5,5">
+                            <animate attributeName="stroke-dashoffset" values="0;-10" dur="1s" repeatCount="indefinite"/>
+                        </path>
+                        
+                        <!-- Central AI Processing -->
+                        <circle cx="200" cy="150" r="40" fill="none" stroke="#6b7280" stroke-width="2" stroke-dasharray="10,5" opacity="0.5">
+                            <animateTransform attributeName="transform" type="rotate" values="0 200 150;360 200 150" dur="10s" repeatCount="indefinite"/>
+                        </circle>
+                        <text x="200" y="155" text-anchor="middle" font-size="12" fill="#374151" font-weight="600">多模态AI</text>
+                        <text x="200" y="170" text-anchor="middle" font-size="10" fill="#6b7280">情感分析</text>
+                        
+                        <!-- Health Status Indicator -->
+                        <rect x="20" y="20" width="80" height="25" rx="12" fill="rgba(16, 185, 129, 0.1)" stroke="#10b981" stroke-width="1"/>
+                        <circle cx="35" cy="32.5" r="4" fill="#10b981">
+                            <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+                        </circle>
+                        <text x="45" y="36" font-size="10" fill="#10b981" font-weight="500">健康监测</text>
+                        
+                        <!-- Emotion Status -->
+                        <rect x="300" y="20" width="80" height="25" rx="12" fill="rgba(59, 130, 246, 0.1)" stroke="#3b82f6" stroke-width="1"/>
+                        <circle cx="315" cy="32.5" r="4" fill="#3b82f6">
+                            <animate attributeName="r" values="4;6;4" dur="1.5s" repeatCount="indefinite"/>
+                        </circle>
+                        <text x="325" y="36" font-size="10" fill="#3b82f6" font-weight="500">情感状态</text>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- Carousel Panel Section -->
+    <section id="carousel-section" class="py-20 bg-gradient-to-b from-white to-orange-50/40 overflow-hidden">
+        <div class="container mx-auto px-4">
+            <div class="text-center mb-12" data-aos="fade-up">
+                <span class="inline-block text-xs font-semibold tracking-widest uppercase text-primary/70 mb-3 px-3 py-1 rounded-full bg-orange-50 border border-orange-100">快速入口</span>
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">选择 <span class="gradient-text">分析模块</span></h2>
+                <p class="text-gray-500 max-w-xl mx-auto text-base">拖动或点击切换，3 秒自动轮播</p>
+            </div>
+
+            <!-- 轮播容器 -->
+            <div id="module-carousel" class="relative select-none" style="height:340px">
+                <!-- 轨道 -->
+                <div id="carousel-track" class="absolute inset-0 flex items-center justify-center" style="cursor:grab">
+                    <!-- 卡片由 JS 动态渲染 -->
+                </div>
+                <!-- 左右箭头 -->
+                <button id="carousel-prev" class="absolute left-2 md:left-6 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/90 shadow-md border border-gray-100 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-all duration-200" aria-label="上一个">
+                    <i class="fa fa-chevron-left"></i>
+                </button>
+                <button id="carousel-next" class="absolute right-2 md:right-6 top-1/2 -translate-y-1/2 z-20 w-10 h-10 rounded-full bg-white/90 shadow-md border border-gray-100 flex items-center justify-center text-gray-500 hover:text-primary hover:border-primary transition-all duration-200" aria-label="下一个">
+                    <i class="fa fa-chevron-right"></i>
+                </button>
+            </div>
+
+            <!-- 指示器 -->
+            <div id="carousel-dots" class="flex justify-center gap-2.5 mt-6" role="tablist" aria-label="模块指示器"></div>
+        </div>
+    </section>
+
+    <!-- Analysis Tool Section -->
+    <section id="analysis-tool" class="py-16 bg-gray-50 hidden">
+        <div class="container mx-auto px-4">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold mb-4">情感 <span class="gradient-text">分析工具</span></h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">
+                    选择以下分析类型，开始从您的数据中探索情感洞察。
+                </p>
+            </div>
+            
+            <!-- Tabs Navigation - 优化版：桌面端图标+文字，移动端下拉 -->
+            <div class="mb-8">
+                <!-- 桌面端 Tab 导航 -->
+                <nav class="hidden md:flex justify-center border-b" aria-label="分析工具导航">
+                    <button class="px-5 py-3 font-medium tab-btn tab-active flex items-center gap-2" data-tab="audio" aria-selected="true" role="tab">
+                        <i class="fa fa-microphone" aria-hidden="true"></i>
+                        <span>语音分析</span>
+                    </button>
+                    <button class="px-5 py-3 font-medium tab-btn flex items-center gap-2" data-tab="face" role="tab">
+                        <i class="fa fa-smile-o" aria-hidden="true"></i>
+                        <span>人脸分析</span>
+                    </button>
+                    <button class="px-5 py-3 font-medium tab-btn flex items-center gap-2" data-tab="image" role="tab">
+                        <i class="fa fa-file-text-o" aria-hidden="true"></i>
+                        <span>OCR分析</span>
+                    </button>
+                    <button class="px-5 py-3 font-medium tab-btn flex items-center gap-2" data-tab="rppg" role="tab">
+                        <i class="fa fa-heartbeat" aria-hidden="true"></i>
+                        <span>心率分析</span>
+                    </button>
+                    <button class="px-5 py-3 font-medium tab-btn flex items-center gap-2" data-tab="assessment" role="tab">
+                        <i class="fa fa-clipboard-check" aria-hidden="true"></i>
+                        <span>心理评估</span>
+                    </button>
+                </nav>
+                
+                <!-- 移动端 Tab 下拉菜单 -->
+                <div class="md:hidden relative" id="mobile-tab-nav">
+                    <button id="mobile-tab-toggle" class="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-300 rounded-lg font-medium" aria-expanded="false" aria-haspopup="listbox">
+                        <span class="flex items-center gap-2">
+                            <i class="fa fa-microphone text-primary" aria-hidden="true"></i>
+                            <span id="current-tab-label">语音分析</span>
+                        </span>
+                        <i class="fa fa-chevron-down text-gray-400 transition-transform" id="tab-chevron"></i>
+                    </button>
+                    <div id="mobile-tab-menu" class="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg hidden z-50" role="listbox">
+                        <button class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100" data-tab="audio" role="option">
+                            <i class="fa fa-microphone text-primary" aria-hidden="true"></i>
+                            <span>语音分析</span>
+                        </button>
+                        <button class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100" data-tab="face" role="option">
+                            <i class="fa fa-smile-o text-primary" aria-hidden="true"></i>
+                            <span>人脸分析</span>
+                        </button>
+                        <button class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100" data-tab="image" role="option">
+                            <i class="fa fa-file-text-o text-primary" aria-hidden="true"></i>
+                            <span>OCR分析</span>
+                        </button>
+                        <button class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100" data-tab="rppg" role="option">
+                            <i class="fa fa-heartbeat text-primary" aria-hidden="true"></i>
+                            <span>心率分析</span>
+                        </button>
+                        <button class="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center gap-2" data-tab="assessment" role="option">
+                            <i class="fa fa-clipboard-check text-primary" aria-hidden="true"></i>
+                            <span>心理评估</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <!-- Audio Analysis Tab -->
+                <div class="tab-pane hidden" id="audio-tab">
+                    <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                        <div class="flex flex-col md:flex-row">
+                            <div class="md:w-1/2 md:pr-6 mb-6 md:mb-0">
+                                <h3 class="text-xl font-semibold mb-4">语音情感分析</h3>
+                                <p class="text-gray-600 mb-4">
+                                    上传音频文件或录制您的声音，分析语音中的情感线索。
+                                </p>
+                                <form id="audio-analysis-form" class="space-y-4">
+                                    <div>
+                                        <label class="block text-gray-700 mb-2">上传音频文件</label>
+                                        <div class="flex items-center justify-center w-full">
+                                            <label id="audio-upload-label" class="flex flex-col w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                                <div class="flex flex-col items-center justify-center pt-7" id="audio-upload-hint">
+                                                    <i class="fa fa-cloud-upload text-gray-400 text-3xl mb-2" aria-hidden="true"></i>
+                                                    <p class="text-sm text-gray-500">
+                                                        <span class="font-medium">点击上传</span>或拖放文件
+                                                    </p>
+                                                    <p class="text-xs text-gray-500 mt-1">
+                                                        MP3, WAV, OGG (最大10MB)
+                                                    </p>
+                                                </div>
+                                                <div class="hidden flex-col items-center justify-center pt-7" id="audio-upload-selected">
+                                                    <i class="fa fa-check-circle text-green-500 text-3xl mb-2"></i>
+                                                    <p id="audio-file-name" class="text-sm text-gray-700 font-medium truncate max-w-xs px-2"></p>
+                                                    <p class="text-xs text-primary mt-1">点击重新选择</p>
+                                                </div>
+                                                <input type="file" class="hidden" id="audio-file" name="audio" accept="audio/*">
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-gray-700 mb-2">或录制音频</label>
+                                        <div class="flex items-center gap-3">
+                                            <button type="button" id="record-btn"
+                                                    class="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary text-primary font-medium hover:bg-primary hover:text-white transition-all duration-200"
+                                                    aria-label="开始录音">
+                                                <i class="fa fa-microphone text-base" aria-hidden="true"></i>
+                                                <span>开始录音</span>
+                                            </button>
+                                            <button type="button" id="stop-btn"
+                                                    class="hidden flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-red-500 bg-red-500 text-white font-medium hover:bg-red-600 hover:border-red-600 transition-all duration-200"
+                                                    aria-label="停止录音">
+                                                <i class="fa fa-stop text-base" aria-hidden="true"></i>
+                                                <span>停止录音</span>
+                                            </button>
+                                            <div id="recording-status" class="hidden items-center gap-2 text-sm text-red-500 font-medium">
+                                                <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                                                正在录音…
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-end">
+                                        <button type="submit" class="btn-primary" id="analyze-audio-btn">
+                                            <i class="fa fa-analytics mr-2" aria-hidden="true"></i> 分析音频
+                                        </button>
+                                    </div>
+                                    <!-- 问题定位（分析后显示） -->
+                                    <div id="audio-issue-box" class="hidden mt-1 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                                        <p class="text-xs font-semibold text-primary/70 mb-1 flex items-center gap-1">
+                                            <i class="fa fa-search" aria-hidden="true"></i> 问题定位
+                                        </p>
+                                        <p id="audio-issue-text" class="text-sm text-gray-700 leading-relaxed"></p>
+                                    </div>
+                                </form>
+                                
+                            </div>
+                            <div class="md:w-1/2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0">
+                                <h3 class="text-xl font-semibold mb-4">分析结果</h3>
+                                <div id="audio-results" class="hidden">
+                                    <div class="mb-6">
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 12h2" stroke="#3b82f6" stroke-width="2" fill="none"><animate attributeName="stroke-dashoffset" values="0;10;0" dur="1.5s" repeatCount="indefinite"/></path></svg>主导情感</h4>
+                                        <div class="flex items-center">
+                                            <div id="audio-emotion-label" class="text-xl font-bold mr-3">开心</div>
+                                            <div id="audio-emotion-score" class="text-sm bg-gray-100 px-3 py-1 rounded-full">85%</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="10" width="3" height="8" fill="#10b981"><animate attributeName="height" values="6;10;6" dur="2s" repeatCount="indefinite"/></rect><rect x="10" y="6" width="3" height="12" fill="#f59e0b"><animate attributeName="height" values="12;8;12" dur="2s" repeatCount="indefinite"/></rect><rect x="16" y="12" width="3" height="6" fill="#3b82f6"><animate attributeName="height" values="4;8;4" dur="2s" repeatCount="indefinite"/></rect></svg>情感细分</h4>
+                                        <div class="space-y-3">
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot happy" aria-hidden="true"></span>开心</span>
+                                                    <span id="happy-score" class="text-sm font-medium">85%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100" aria-label="开心">
+                                                    <div id="happy-bar" class="bg-yellow-400 emotion-bar" style="width: 85%"></div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot sad" aria-hidden="true"></span>悲伤</span>
+                                                    <span id="sad-score" class="text-sm font-medium">5%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow="5" aria-valuemin="0" aria-valuemax="100" aria-label="悲伤">
+                                                    <div id="sad-bar" class="bg-indigo-400 emotion-bar" style="width: 5%"></div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot angry" aria-hidden="true"></span>愤怒</span>
+                                                    <span id="angry-score" class="text-sm font-medium">3%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow="3" aria-valuemin="0" aria-valuemax="100" aria-label="愤怒">
+                                                    <div id="angry-bar" class="bg-red-500 emotion-bar" style="width: 3%"></div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot neutral" aria-hidden="true"></span>中性</span>
+                                                    <span id="neutral-score" class="text-sm font-medium">7%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2" role="progressbar" aria-valuenow="7" aria-valuemin="0" aria-valuemax="100" aria-label="中性">
+                                                    <div id="neutral-bar" class="bg-gray-500 emotion-bar" style="width: 7%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 交互式对话 -->
+                                    <div class="mt-6 flex flex-col" style="overflow:hidden">
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center gap-1 flex-shrink-0">
+                                            <svg viewBox="0 0 24 24" class="w-4 h-4" xmlns="http://www.w3.org/2000/svg"><path d="M12 21s-6-4.35-9-7.5C1 10 3.5 7 6.5 7 8.5 7 10 8 12 9.5 14 8 15.5 7 17.5 7 20.5 7 23 10 21 13.5 18 16.65 12 21 12 21z" fill="#ef4444"><animateTransform attributeName="transform" type="scale" values="1;1.2;1" dur="1.2s" repeatCount="indefinite"/></path></svg>
+                                            情感对话
+                                        </h4>
+                                        <!-- 消息列表：固定高度，内容溢出滚动 -->
+                                        <div id="audio-chat-messages"
+                                             class="flex flex-col gap-3 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-3 mb-3"
+                                             style="height:240px;min-height:240px;max-height:240px;scroll-behavior:smooth;overflow-y:auto"
+                                             aria-live="polite" aria-label="对话记录">
+                                            <p id="audio-chat-placeholder" class="text-gray-400 text-sm text-center m-auto">分析完成后，AI 将主动与您对话。</p>
+                                        </div>
+                                        <!-- 输入区 -->
+                                        <div class="flex gap-2 items-center">
+                                            <!-- 文字模式 -->
+                                            <input id="audio-chat-input"
+                                                   type="text"
+                                                   placeholder="继续聊聊您的感受…"
+                                                   style="height:44px;padding-top:0;padding-bottom:0"
+                                                   class="input-field flex-1 text-sm min-w-0"
+                                                   disabled
+                                                   aria-label="输入消息" />
+                                            <!-- 录音模式状态条（默认隐藏） -->
+                                            <div id="chat-voice-bar"
+                                                 class="hidden flex-1 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 text-sm text-red-600">
+                                                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0"></span>
+                                                <span id="chat-voice-transcript" class="flex-1 truncate text-gray-600 italic">正在聆听…</span>
+                                            </div>
+                                            <!-- 切换录音按钮 -->
+                                            <button id="audio-chat-mic"
+                                                    type="button"
+                                                    style="width:44px;height:44px;flex-shrink:0"
+                                                    class="rounded-xl border-2 border-gray-300 bg-white text-gray-500 hover:border-primary hover:text-primary transition-colors flex items-center justify-center"
+                                                    disabled
+                                                    aria-label="切换语音输入" title="切换语音输入">
+                                                <i class="fa fa-microphone" style="font-size:16px" aria-hidden="true"></i>
+                                            </button>
+                                            <!-- 发送按钮 -->
+                                            <button id="audio-chat-send"
+                                                    type="button"
+                                                    style="width:44px;height:44px;flex-shrink:0;background:linear-gradient(135deg,#f97316,#14b8a6)"
+                                                    class="rounded-xl text-white hover:opacity-90 transition-opacity flex items-center justify-center shadow-sm"
+                                                    disabled
+                                                    aria-label="发送">
+                                                <i class="fa fa-paper-plane" style="font-size:16px" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="audio-placeholder" class="flex flex-col items-center justify-center h-full py-12">
+                                    <i class="fa fa-headphones text-gray-300 text-5xl mb-4"></i>
+                                    <p class="text-gray-500 text-center">
+                                        上传音频文件或录制声音查看分析结果。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Facial Analysis Tab -->
+                <div class="tab-pane hidden" id="face-tab">
+                    <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                        <div class="flex flex-col md:flex-row">
+                            <div class="md:w-1/2 md:pr-6 mb-6 md:mb-0">
+                                <h3 class="text-xl font-semibold mb-4">眨眼&疲劳检测</h3>
+                                <p class="text-gray-600 mb-6">
+                                    实时检测眨眼和疲劳状态，使用摄像头进行连续监测。
+                                </p>
+                                <div class="bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl p-4 text-center mb-6 shadow-inner">
+                                    <div id="face-camera-preview" class="w-full h-96 bg-gray-300 rounded-lg mb-4 flex items-center justify-center hidden overflow-hidden">
+                                        <video id="video-stream" autoplay playsinline class="w-full h-full object-cover"></video>
+                                    </div>
+                                    <div id="video-status" class="text-sm text-gray-600 font-medium">
+                                        等待相机启动...
+                                    </div>
+                                </div>
+                                <div id="image-blink-box" class="bg-gray-50 rounded-lg p-3">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center space-x-2">
+                                            <button type="button" class="btn-secondary text-sm px-3 py-1" id="blink-live-start"><i class="fa fa-play mr-1"></i> 开始检测</button>
+                                            <button type="button" class="btn-secondary text-sm px-3 py-1" id="blink-live-stop"><i class="fa fa-stop mr-1"></i> 停止</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500">需要相机权限</span>
+                                    </div>
+                                    <p id="image-blink-text" class="text-gray-600 text-xs mt-2">实时检测已停止</p>
+                                </div>
+                            </div>
+                            <div class="md:w-1/2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0">
+                                <h3 class="text-xl font-semibold mb-4">分析结果</h3>
+                                <div id="face-results" class="hidden">
+                                    <div class="mb-6">
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="none" stroke="#374151"/><circle cx="9" cy="10" r="1.5" fill="#374151"><animate attributeName="r" values="1.2;1.5;1.2" dur="1.5s" repeatCount="indefinite"/></circle><circle cx="15" cy="10" r="1.5" fill="#374151"/><path d="M8 14c1.5 2 6.5 2 8 0" stroke="#374151" fill="none" stroke-width="2"/></svg>检测到的情感</h4>
+                                        <div class="flex items-center">
+                                            <div id="face-emotion-label" class="text-xl font-bold mr-3">惊讶</div>
+                                            <div id="face-emotion-score" class="text-sm bg-gray-100 px-3 py-1 rounded-full">78%</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="10" width="3" height="8" fill="#10b981"><animate attributeName="height" values="6;10;6" dur="2s" repeatCount="indefinite"/></rect><rect x="10" y="6" width="3" height="12" fill="#f59e0b"><animate attributeName="height" values="12;8;12" dur="2s" repeatCount="indefinite"/></rect><rect x="16" y="12" width="3" height="6" fill="#3b82f6"><animate attributeName="height" values="4;8;4" dur="2s" repeatCount="indefinite"/></rect></svg>情感细分</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot angry" aria-hidden="true"></span>愤怒</span>
+                                                    <span id="face-angry-score" class="text-sm font-medium">5%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-angry-bar" class="bg-red-500 emotion-bar" style="width: 5%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot disgust" aria-hidden="true"></span>厌恶</span>
+                                                    <span id="face-disgust-score" class="text-sm font-medium">2%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-disgust-bar" class="bg-green-700 emotion-bar" style="width: 2%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot fear" aria-hidden="true"></span>恐惧</span>
+                                                    <span id="face-fear-score" class="text-sm font-medium">8%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-fear-bar" class="bg-purple-500 emotion-bar" style="width: 8%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot happy" aria-hidden="true"></span>开心</span>
+                                                    <span id="face-happy-score" class="text-sm font-medium">7%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-happy-bar" class="bg-yellow-400 emotion-bar" style="width: 7%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot sad" aria-hidden="true"></span>悲伤</span>
+                                                    <span id="face-sad-score" class="text-sm font-medium">3%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-sad-bar" class="bg-indigo-400 emotion-bar" style="width: 3%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot surprise" aria-hidden="true"></span>惊讶</span>
+                                                    <span id="face-surprise-score" class="text-sm font-medium">78%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-surprise-bar" class="bg-pink-500 emotion-bar" style="width: 78%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot" style="background:#f97316" aria-hidden="true"></span>焦虑</span>
+                                                    <span id="face-anxiety-score" class="text-sm font-medium">12%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-anxiety-bar" class="bg-orange-500 emotion-bar" style="width: 12%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot" style="background:#6366f1" aria-hidden="true"></span>压抑</span>
+                                                    <span id="face-depression-score" class="text-sm font-medium">5%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-depression-bar" class="bg-indigo-500 emotion-bar" style="width: 5%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3 col-span-2">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot neutral" aria-hidden="true"></span>中性</span>
+                                                    <span id="face-neutral-score" class="text-sm font-medium">17%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="face-neutral-bar" class="bg-gray-500 emotion-bar" style="width: 17%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Real-time Blink/Fatigue Indicators - Moved below analysis results -->
+                                <div id="blink-live-panel" class="mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+                                    <h4 class="font-semibold text-blue-800 mb-3 flex items-center">
+                                        <i class="fa fa-heartbeat mr-2"></i>
+                                        实时眨眼/疲劳指标
+                                    </h4>
+                                    <div class="grid grid-cols-2 gap-3 text-sm">
+                                        <div class="bg-white/70 rounded px-2 py-1">闭眼：<span id="blink-eye-closed" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">疲劳：<span id="blink-fatigued" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">EAR 左：<span id="blink-ear-left" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">EAR 右：<span id="blink-ear-right" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">EAR 平均：<span id="blink-ear-avg" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">PERCLOS：<span id="blink-perclos" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">疲劳指数：<span id="blink-fatigue" class="font-mono text-blue-700">--</span></div>
+                                        <div class="bg-white/70 rounded px-2 py-1">眼线角度：<span id="blink-eye-line" class="font-mono text-blue-700">--</span>°</div>
+                                        <div class="bg-white/70 rounded px-2 py-1">Pitch：<span id="blink-pitch" class="font-mono text-blue-700">--</span>°</div>
+                                        <div class="bg-white/70 rounded px-2 py-1">Yaw：<span id="blink-yaw" class="font-mono text-blue-700">--</span>°</div>
+                                    </div>
+                                </div>
+                                
+                                <div id="face-placeholder" class="flex flex-col items-center justify-center h-full py-12">
+                                    <i class="fa fa-user-circle text-gray-300 text-5xl mb-4"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Image Analysis Tab -->
+                <div class="tab-pane hidden" id="image-tab">
+                    <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                        <div class="flex flex-col md:flex-row">
+                            <div class="md:w-1/2 md:pr-6 mb-6 md:mb-0">
+                                <h3 class="text-xl font-semibold mb-4">OCR分析</h3>
+                                <p class="text-gray-600 mb-4">
+                                    上传图像分析其中传达的情感，从视觉内容中提取情感线索。
+                                </p>
+                                <form id="image-analysis-form" class="space-y-4">
+                                    <div>
+                                        <label class="block text-gray-700 mb-2">上传图像</label>
+                                        <div class="flex items-center justify-center w-full">
+                                            <label id="image-upload-label" class="flex flex-col w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                                <div class="flex flex-col items-center justify-center pt-7" id="image-upload-hint">
+                                                    <i class="fa fa-cloud-upload text-gray-400 text-3xl mb-2" aria-hidden="true"></i>
+                                                    <p class="text-sm text-gray-500">
+                                                        <span class="font-medium">点击上传</span>或拖放文件
+                                                    </p>
+                                                    <p class="text-xs text-gray-500 mt-1">
+                                                        JPG, PNG (最大5MB)
+                                                    </p>
+                                                </div>
+                                                <div class="hidden flex-col items-center justify-center pt-7" id="image-upload-selected">
+                                                    <i class="fa fa-check-circle text-green-500 text-3xl mb-2"></i>
+                                                    <p id="image-file-name" class="text-sm text-gray-700 font-medium truncate max-w-xs px-2"></p>
+                                                    <p class="text-xs text-primary mt-1">点击重新选择</p>
+                                                </div>
+                                                <input type="file" class="hidden" id="image-file" name="image" accept="image/*">
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        
+                                    </div>
+                                    <!-- OCR 选项 -->
+                                    <div class="flex items-center justify-between">
+                                        <label class="inline-flex items-center space-x-2">
+                                            <input type="checkbox" id="ocr-vertical" name="ocr_vertical" class="form-checkbox h-4 w-4 text-primary">
+                                            <span class="text-gray-700 text-sm">识别竖排中文</span>
+                                        </label>
+                                    </div>
+                                    <div class="flex justify-end space-x-3">
+                                        <button type="button" class="btn-secondary" id="reupload-image-btn">
+                                            <i class="fa fa-refresh mr-2"></i> 重新上传
+                                        </button>
+                                        <button type="submit" class="btn-primary" id="analyze-image-btn">
+                                            <i class="fa fa-analytics mr-2"></i> 分析图片
+                                        </button>
+                                    </div>
+                                </form>
+                                <!-- OCR 文本显示（移动到分析按钮下方） -->
+                                <div id="image-ocr-box" class="mt-4 bg-gray-50 rounded-lg p-4">
+                                    <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="#10b981"/><circle cx="12" cy="12" r="3" fill="#10b981"><animate attributeName="r" values="2.5;3.5;2.5" dur="1.5s" repeatCount="indefinite"/></circle></svg>OCR提取文本</h4>
+                                    <p id="image-ocr-text" class="text-gray-600 text-sm">分析后将显示OCR文本（如果可用）。</p>
+                                </div>
+                                
+                            </div>
+                            <div class="md:w-1/2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0">
+                                <h3 class="text-xl font-semibold mb-4">分析结果</h3>
+                                <div id="image-results" class="hidden">
+                                    <div class="mb-6">
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="none" stroke="#374151"/><circle cx="9" cy="10" r="1.5" fill="#374151"><animate attributeName="r" values="1.2;1.5;1.2" dur="1.5s" repeatCount="indefinite"/></circle><circle cx="15" cy="10" r="1.5" fill="#374151"/><path d="M8 14c1.5 2 6.5 2 8 0" stroke="#374151" fill="none" stroke-width="2"/></svg>检测到的情感</h4>
+                                        <div class="flex items-center">
+                                            <div id="image-emotion-label" class="text-xl font-bold mr-3">快乐</div>
+                                            <div id="image-emotion-score" class="text-sm bg-gray-100 px-3 py-1 rounded-full">85%</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="10" width="3" height="8" fill="#10b981"><animate attributeName="height" values="6;10;6" dur="2s" repeatCount="indefinite"/></rect><rect x="10" y="6" width="3" height="12" fill="#f59e0b"><animate attributeName="height" values="12;8;12" dur="2s" repeatCount="indefinite"/></rect><rect x="16" y="12" width="3" height="6" fill="#3b82f6"><animate attributeName="height" values="4;8;4" dur="2s" repeatCount="indefinite"/></rect></svg>情感细分</h4>
+                                        <div class="grid grid-cols-2 gap-4">
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot angry" aria-hidden="true"></span>愤怒</span>
+                                                    <span id="image-angry-score" class="text-sm font-medium">5%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-angry-bar" class="bg-red-500 emotion-bar" style="width: 5%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot disgust" aria-hidden="true"></span>厌恶</span>
+                                                    <span id="image-disgust-score" class="text-sm font-medium">2%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-disgust-bar" class="bg-green-700 emotion-bar" style="width: 2%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot fear" aria-hidden="true"></span>恐惧</span>
+                                                    <span id="image-fear-score" class="text-sm font-medium">3%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-fear-bar" class="bg-purple-500 emotion-bar" style="width: 3%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot happy" aria-hidden="true"></span>快乐</span>
+                                                    <span id="image-happy-score" class="text-sm font-medium">85%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-happy-bar" class="bg-yellow-400 emotion-bar" style="width: 85%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot sad" aria-hidden="true"></span>悲伤</span>
+                                                    <span id="image-sad-score" class="text-sm font-medium">2%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-sad-bar" class="bg-indigo-400 emotion-bar" style="width: 2%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot surprise" aria-hidden="true"></span>惊讶</span>
+                                                    <span id="image-surprise-score" class="text-sm font-medium">3%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-surprise-bar" class="bg-pink-500 emotion-bar" style="width: 3%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="bg-gray-50 rounded-lg p-3 col-span-2">
+                                                <div class="flex justify-between mb-1">
+                                                    <span class="text-sm font-medium flex items-center"><span class="emotion-label-dot neutral" aria-hidden="true"></span>中性</span>
+                                                    <span id="image-neutral-score" class="text-sm font-medium">0%</span>
+                                                </div>
+                                                <div class="w-full bg-gray-200 rounded-full h-2">
+                                                    <div id="image-neutral-bar" class="bg-gray-500 emotion-bar" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 安慰话语显示 -->
+                                    <div id="image-comfort-box" class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                        <h4 class="font-medium text-blue-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><path d="M12 21s-6-4.35-9-7.5C1 10 3.5 7 6.5 7 8.5 7 10 8 12 9.5 14 8 15.5 7 17.5 7 20.5 7 23 10 21 13.5 18 16.65 12 21 12 21z" fill="#3b82f6"><animateTransform attributeName="transform" type="scale" values="1;1.2;1" dur="1.2s" repeatCount="indefinite"/></path></svg>小探安慰话语</h4>
+                                        <p id="image-comfort-text" class="text-blue-800 text-sm">分析后将显示安慰话语。</p>
+                                    </div>
+                                    <!-- 建议显示 -->
+                                    <div id="image-advice-box" class="mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                                        <h4 class="font-medium text-emerald-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><path d="M12 3a7 7 0 0 1 7 7c0 3-2 4-3 5H8c-1-1-3-2-3-5a7 7 0 0 1 7-7z" fill="#10b981" opacity="0.8"/><rect x="9" y="16" width="6" height="2" rx="1" fill="#064e3b"><animate attributeName="opacity" values="0.6;1;0.6" dur="1s" repeatCount="indefinite"/></rect></svg>小探建议</h4>
+                                        <ul id="image-advice-list" class="list-disc list-inside text-emerald-800 text-sm">
+                                            <li>分析后将显示建议（1-2条）。</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div id="image-placeholder" class="flex flex-col items-center justify-center h-full py-12">
+                                    <i class="fa fa-picture-o text-gray-300 text-5xl mb-4"></i>
+                                    <p class="text-gray-500 text-center">
+                                        上传图像查看OCR分析结果。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- rPPG Analysis Tab -->
+                <div class="tab-pane hidden" id="rppg-tab">
+                    <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                        <div class="flex flex-col md:flex-row">
+                            <div class="md:w-1/2 md:pr-6 mb-6 md:mb-0">
+                                <h3 class="text-xl font-semibold mb-4">rPPG心率估计</h3>
+                                <p class="text-gray-600 mb-4">
+                                    使用相机通过远程光体积描记术测量心率和生理反应。
+                                </p>
+                                <form id="rppg-analysis-form" class="space-y-4 flex-1 flex flex-col">
+                                    <div>
+                                        <label class="block text-gray-700 mb-2">相机设置</label>
+                                        <div class="bg-gray-100 rounded-lg p-4 text-center flex-1 flex flex-col">
+                                            <div id="rppg-camera-preview" class="w-full flex-1 min-h-[260px] bg-gray-200 rounded-lg mb-4 flex items-center justify-center overflow-hidden">
+                                                <i class="fa fa-video-camera text-gray-400 text-4xl"></i>
+                                            </div>
+                                            <p class="text-sm text-gray-600 mb-4">
+                                                将您的脸放在相机前，并确保光线良好以获得准确的测量结果。
+                                            </p>
+                                            <div class="flex items-center space-x-4">
+                                                <button type="button" id="start-rppg-btn" class="btn-secondary flex-1">
+                                                    <i class="fa fa-play mr-2"></i> 开始测量
+                                                </button>
+                                                <button type="button" id="stop-rppg-btn" class="btn-primary flex-1 hidden">
+                                                    <i class="fa fa-stop mr-2"></i> 停止测量
+                                                </button>
+                                            </div>
+                                            <div id="rppg-status" class="mt-2 text-sm text-gray-500 hidden">
+                                                <span class="inline-block w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
+                                                正在测量...请保持静止。
+                                            </div>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="md:w-1/2 md:pl-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0">
+                                <h3 class="text-xl font-semibold mb-4">测量结果</h3>
+                                <div id="rppg-results" class="hidden">
+                                    <div class="flex flex-col items-center justify-center mb-6">
+                                        <div class="text-5xl font-bold text-primary mb-2 heart-beat" id="heart-rate-value">72</div>
+                                        <div class="text-lg text-gray-600">次/分钟</div>
+                                        <div class="mt-4 text-sm bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                                            <i class="fa fa-check-circle mr-1"></i> 心率正常
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><path d="M3 12h4l2-4 3 8 2-4h5" stroke="#ef4444" stroke-width="2" fill="none"><animate attributeName="stroke-dashoffset" values="0;10;0" dur="1s" repeatCount="indefinite"/></path></svg>心率变异性</h4>
+                                        <div class="bg-gray-50 rounded-lg p-4 space-y-4">
+                                            <div class="grid grid-cols-2 gap-4 text-center text-sm">
+                                                <div class="border rounded-lg p-3">
+                                                    <div class="text-gray-500 mb-1">RMSSD</div>
+                                                    <div class="text-xl font-semibold text-primary" id="hrv-metric-rmssd">--</div>
+                                                </div>
+                                                <div class="border rounded-lg p-3">
+                                                    <div class="text-gray-500 mb-1">SDNN</div>
+                                                    <div class="text-xl font-semibold text-primary" id="hrv-metric-sdnn">--</div>
+                                                </div>
+                                            </div>
+                                            <div class="mt-4">
+                                                <h4 class="font-medium text-gray-700 mb-2 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="none" stroke="#374151"/><circle cx="9" cy="10" r="1.5" fill="#374151"><animate attributeName="r" values="1.2;1.5;1.2" dur="1.5s" repeatCount="indefinite"/></circle><circle cx="15" cy="10" r="1.5" fill="#374151"/><path d="M8 14c1.5 2 6.5 2 8 0" stroke="#374151" fill="none" stroke-width="2"/></svg>情绪状态</h4>
+                                                <div class="flex items-center">
+                                                    <div class="w-full bg-gray-200 rounded-full h-4 mr-4">
+                                                        <div id="emotional-state-bar" class="bg-blue-500 emotion-bar" style="width: 65%"></div>
+                                                    </div>
+                                                    <div id="emotional-state-label" class="font-medium">平静</div>
+                                                </div>
+                                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                                    <span>紧张</span>
+                                                    <span>中性</span>
+                                                    <span>平静</span>
+                                                </div>
+                                            </div>
+                                            <canvas id="hrv-chart" height="150" style="width: 100%; height: 150px;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="rppg-placeholder" class="flex flex-col items-center justify-center h-full py-12">
+                                    <i class="fa fa-heartbeat text-gray-300 text-5xl mb-4"></i>
+                                    <p class="text-gray-500 text-center">
+                                        点击"开始测量"开始心率和情感分析。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Psychological Assessment Tab -->
+                <div class="tab-pane hidden" id="assessment-tab">
+                    <div class="bg-white rounded-xl shadow-md p-6 md:p-8">
+                        <!-- Assessment Start Screen -->
+                        <div id="assessment-start" class="text-center py-12">
+                            <div class="w-24 h-24 rounded-full gradient-bg flex items-center justify-center mx-auto mb-6">
+                                <svg viewBox="0 0 24 24" class="w-10 h-10" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="6" y="4" width="12" height="16" rx="2" fill="none" stroke="#ffffff" stroke-width="2"/>
+                                    <rect x="9" y="2" width="6" height="4" rx="1" fill="#ffffff" opacity="0.9"/>
+                                    <path d="M9 12 L11 14 L15 10" stroke="#10b981" stroke-width="2" fill="none">
+                                        <animate attributeName="opacity" values="0.5;1;0.5" dur="1.2s" repeatCount="indefinite"/>
+                                    </path>
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-semibold mb-3 flex items-center"><svg viewBox="0 0 24 24" class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="4" width="12" height="16" rx="2" fill="none" stroke="#374151"/><rect x="9" y="2" width="6" height="4" rx="1" fill="#374151" opacity="0.8"/><path d="M9 10 L11 12 L15 8" stroke="#10b981" stroke-width="2" fill="none"><animate attributeName="opacity" values="0.4;1;0.4" dur="1.2s" repeatCount="indefinite"/></path></svg>心理健康评估量表</h3>
+                            <p class="text-gray-600 mb-8 max-w-2xl mx-auto">
+                                本评估包含100道题目，旨在帮助您了解自己的心理健康状态。请根据您最近两周的实际情况，对每道题目进行真实评价。
+                            </p>
+                            <div class="bg-gray-50 rounded-lg p-6 mb-8 max-w-2xl mx-auto text-left">
+                                <h4 class="font-semibold mb-3">评估说明：</h4>
+                                <ul class="list-disc list-inside space-y-2 text-gray-600">
+                                    <li>评估大约需要15-20分钟完成</li>
+                                    <li>请选择最符合您情况的选项</li>
+                                    <li>答案没有对错之分，请如实回答</li>
+                                    <li>评估结果仅供参考，不能替代专业医疗建议</li>
+                                </ul>
+                            </div>
+                            <button id="start-assessment-btn" class="btn-primary">
+                                <i class="fa fa-play-circle mr-2"></i> 开始评估
+                            </button>
+                        </div>
+                        
+                        <!-- Assessment Questions Screen (Hidden initially) -->
+                        <div id="assessment-questions" class="hidden">
+                            <!-- Progress Bar -->
+                            <div class="mb-8">
+                                <div class="flex justify-between mb-2">
+                                    <span class="text-sm font-medium text-gray-700">进度</span>
+                                    <span id="progress-text" class="text-sm font-medium text-primary">1/100</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-4">
+                                    <div id="progress-bar" class="bg-primary emotion-bar" style="width: 1%"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Question Card -->
+                            <div class="bg-gray-50 rounded-xl p-6 mb-6">
+                                <div class="flex justify-between items-start mb-4">
+                                    <h4 id="question-category" class="text-sm font-medium text-primary">情绪状态</h4>
+                                    <!-- 已用时间显示（非倒计时） -->
+                                    <span id="elapsed-time" class="text-sm bg-blue-50 text-blue-700 px-3 py-1 rounded-full flex items-center gap-1" aria-label="已用时间">
+                                        <i class="fa fa-clock-o" aria-hidden="true"></i>
+                                        <span>00:00</span>
+                                    </span>
+                                </div>
+                                <h3 id="question-text" class="text-xl font-semibold mb-6">我感到情绪低落、沮丧或绝望。</h3>
+                                <!-- 题目分组指示器 -->
+                                <div class="mb-4" id="question-group-indicator" aria-label="题目分组进度">
+                                    <!-- <div class="flex items-center gap-2 text-sm text-gray-500 mb-2">
+                                        <span id="current-group">第 1 组</span>
+                                        <span class="text-gray-300">|</span>
+                                        <span id="group-progress">1-10 题</span>
+                                    </div> -->
+                                    <div class="flex gap-1" id="group-segments" role="progressbar" aria-valuenow="1" aria-valuemin="1" aria-valuemax="10">
+                                        <!-- 动态生成分段指示器 -->
+                                    </div>
+                                </div>
+                                <fieldset class="border-0 p-0 m-0">
+                                    <legend class="sr-only">请选择最符合您情况的选项</legend>
+                                    <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                                        <label class="assessment-option flex flex-col items-center justify-center p-3 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all text-center">
+                                            <input type="radio" name="answer" value="1" class="sr-only">
+                                            <span class="text-lg font-bold mb-1">1</span>
+                                            <span class="text-xs text-gray-600 leading-tight">完全不符合</span>
+                                        </label>
+                                        <label class="assessment-option flex flex-col items-center justify-center p-3 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all text-center">
+                                            <input type="radio" name="answer" value="2" class="sr-only">
+                                            <span class="text-lg font-bold mb-1">2</span>
+                                            <span class="text-xs text-gray-600 leading-tight">不太符合</span>
+                                        </label>
+                                        <label class="assessment-option flex flex-col items-center justify-center p-3 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all text-center">
+                                            <input type="radio" name="answer" value="3" class="sr-only">
+                                            <span class="text-lg font-bold mb-1">3</span>
+                                            <span class="text-xs text-gray-600 leading-tight">一般</span>
+                                        </label>
+                                        <label class="assessment-option flex flex-col items-center justify-center p-3 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all text-center">
+                                            <input type="radio" name="answer" value="4" class="sr-only">
+                                            <span class="text-lg font-bold mb-1">4</span>
+                                            <span class="text-xs text-gray-600 leading-tight">比较符合</span>
+                                        </label>
+                                        <label class="assessment-option flex flex-col items-center justify-center p-3 rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary hover:bg-primary/5 transition-all text-center">
+                                            <input type="radio" name="answer" value="5" class="sr-only">
+                                            <span class="text-lg font-bold mb-1">5</span>
+                                            <span class="text-xs text-gray-600 leading-tight">完全符合</span>
+                                        </label>
+                                    </div>
+                                </fieldset>
+                            </div>
+                            
+                            <!-- Navigation Buttons -->
+                            <div class="flex justify-between">
+                                <button id="prev-question-btn" class="btn-secondary opacity-50 cursor-not-allowed" disabled>
+                                    <i class="fa fa-arrow-left mr-2"></i> 上一题
+                                </button>
+                                <button id="next-question-btn" class="btn-primary">
+                                    下一题 <i class="fa fa-arrow-right ml-2"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Rest/Break Modal -->
+                        <div id="rest-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000] hidden">
+                            <div class="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl transform transition-all">
+                                <div class="text-center">
+                                    <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                                        <i class="fa fa-coffee"></i>
+                                    </div>
+                                    <h3 class="text-xl font-bold mb-2">完成了一小步！</h3>
+                                    <p class="text-gray-600 mb-6" id="rest-modal-text">您已完成本组 10 道题目，建议休息片刻以保持评估的准确性。</p>
+                                    <div class="flex flex-col gap-3">
+                                        <button id="continue-assessment-btn" class="btn-primary w-full">继续答题</button>
+                                        <button id="take-break-btn" class="btn-secondary w-full">休息片刻</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Assessment Results Screen (Hidden initially) -->
+                        <div id="assessment-results" class="hidden">
+                            <div class="text-center mb-8">
+                                <h3 class="text-2xl font-bold mb-4">评估结果</h3>
+                                <p class="text-gray-600">
+                                    根据您的回答，我们为您生成了以下心理健康评估报告。
+                                </p>
+                            </div>
+                            
+                            <!-- Overall Status Dashboard -->
+                            <div class="mb-10">
+                                <h4 class="text-lg font-semibold mb-4 text-center">总体心理健康状态</h4>
+                                <div class="flex justify-center">
+                                    <div class="relative w-64 h-64">
+                                        <canvas id="status-dashboard"></canvas>
+                                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                            <span id="status-text" class="text-3xl font-bold">健康</span>
+                                            <span id="status-description" class="text-sm text-gray-500">您的心理健康状况良好</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Category Analysis -->
+                            <div class="mb-10">
+                                <h4 class="text-lg font-semibold mb-6">各维度分析</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div class="bg-gray-50 rounded-lg p-4">
+                                        <h5 class="font-medium mb-3">情绪稳定性</h5>
+                                        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                                            <div id="emotional-stability-bar" class="bg-green-500 emotion-bar" style="width: 80%"></div>
+                                        </div>
+                                        <div class="flex justify-between text-sm">
+                                            <span>需要关注</span>
+                                            <span id="emotional-stability-score">80%</span>
+                                            <span>非常稳定</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 rounded-lg p-4">
+                                        <h5 class="font-medium mb-3">社交能力</h5>
+                                        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                                            <div id="social-ability-bar" class="bg-green-500 emotion-bar" style="width: 75%"></div>
+                                        </div>
+                                        <div class="flex justify-between text-sm">
+                                            <span>需要关注</span>
+                                            <span id="social-ability-score">75%</span>
+                                            <span>非常活跃</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 rounded-lg p-4">
+                                        <h5 class="font-medium mb-3">压力水平</h5>
+                                        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                                            <div id="stress-level-bar" class="bg-yellow-500 emotion-bar" style="width: 55%"></div>
+                                        </div>
+                                        <div class="flex justify-between text-sm">
+                                            <span>压力较小</span>
+                                            <span id="stress-level-score">55%</span>
+                                            <span>压力较大</span>
+                                        </div>
+                                    </div>
+                                    <div class="bg-gray-50 rounded-lg p-4">
+                                        <h5 class="font-medium mb-3">自我认知</h5>
+                                        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+                                            <div id="self-awareness-bar" class="bg-green-500 emotion-bar" style="width: 85%"></div>
+                                        </div>
+                                        <div class="flex justify-between text-sm">
+                                            <span>需要关注</span>
+                                            <span id="self-awareness-score">85%</span>
+                                            <span>非常清晰</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Recommendations -->
+                            <div class="mb-10">
+                                <h4 class="text-lg font-semibold mb-4">建议与资源</h4>
+                                <div id="recommendations-container" class="bg-gray-50 rounded-lg p-6">
+                                    <div class="flex items-start mb-4">
+                                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mr-4">
+                                            <i class="fa fa-check text-green-500"></i>
+                                        </div>
+                                        <div>
+                                            <h5 class="font-medium mb-1">保持健康的生活方式</h5>
+                                            <p class="text-gray-600">规律作息、均衡饮食和适量运动有助于维持良好的心理健康状态。</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start mb-4">
+                                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mr-4">
+                                            <i class="fa fa-comments text-green-500"></i>
+                                        </div>
+                                        <div>
+                                            <h5 class="font-medium mb-1">保持社交互动</h5>
+                                            <p class="text-gray-600">与亲朋好友保持联系，参加社交活动，有助于缓解压力和焦虑。</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center mr-4">
+                                            <i class="fa fa-lightbulb-o text-yellow-500"></i>
+                                        </div>
+                                        <div>
+                                            <h5 class="font-medium mb-1">学习放松技巧</h5>
+                                            <p class="text-gray-600">尝试冥想、深呼吸或瑜伽等放松技巧，有助于减轻压力和改善情绪。</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Professional Help Section (Hidden by default) -->
+                            <div id="professional-help" class="hidden mb-10">
+                                <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+                                    <div class="flex">
+                                        <div class="flex-shrink-0">
+                                            <i class="fa fa-exclamation-triangle text-red-500"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <h4 class="text-lg font-medium text-red-800">建议寻求专业帮助</h4>
+                                            <p class="text-red-700 mt-2">
+                                                根据您的评估结果，建议您咨询学校心理咨询中心或专业心理医生，获取更详细的评估和支持。
+                                            </p>
+                                            <div class="mt-4">
+                                                <h5 class="font-medium text-red-800">可联系的资源：</h5>
+                                                <ul class="mt-2 list-disc list-inside text-red-700">
+                                                    <li>学校心理咨询中心：XXX-XXXXXXX</li>
+                                                    <li>心理健康热线：XXXX-XXXXXXX</li>
+                                                    <li>校医院心理科：XXX-XXXXXXX</li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Action Buttons -->
+                            <div class="flex justify-center space-x-4">
+                                <button id="restart-assessment-btn" class="btn-secondary">
+                                    <i class="fa fa-refresh mr-2"></i> 重新评估
+                                </button>
+                                <button id="download-results-btn" class="btn-primary">
+                                    <i class="fa fa-download mr-2"></i> 下载报告
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="py-16 bg-white">
+        <div class="container mx-auto px-4">
+            <div class="text-center mb-12" data-aos="fade-up">
+                <h2 class="text-3xl font-bold mb-4">关于 <span class="gradient-text">多模心探</span></h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">
+                    了解更多关于我们先进的情感分析平台，以及它如何帮助您获得更深入的见解。
+                </p>
+            </div>
+            
+            <div class="flex flex-col md:flex-row items-center">
+                <div class="md:w-1/2 mb-8 md:mb-0" data-aos="fade-right">
+                    <div class="w-64 h-64 mx-auto rounded-3xl flex items-center justify-center" style="background: linear-gradient(135deg, #e0f2fe 0%, #ccfbf1 100%);">
+                        <svg viewBox="0 0 200 200" class="w-48 h-48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="多模心探品牌插画">
+                            <!-- 大圆背景 -->
+                            <circle cx="100" cy="100" r="80" fill="white" opacity="0.7"/>
+                            <!-- 心形 -->
+                            <path d="M100 140 C60 115 45 90 55 72 C62 58 80 55 100 72 C120 55 138 58 145 72 C155 90 140 115 100 140Z" fill="#0891b2" opacity="0.15"/>
+                            <path d="M100 135 C65 112 52 90 60 74 C66 62 82 59 100 74 C118 59 134 62 140 74 C148 90 135 112 100 135Z" stroke="#0891b2" stroke-width="2.5" fill="none"/>
+                            <!-- 波形线 -->
+                            <path d="M40 100 Q55 85 70 100 T100 100 T130 100 T160 100" stroke="#14b8a6" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                            <!-- 数据点 -->
+                            <circle cx="70" cy="100" r="4" fill="#0891b2"/>
+                            <circle cx="100" cy="100" r="4" fill="#0891b2"/>
+                            <circle cx="130" cy="100" r="4" fill="#0891b2"/>
+                            <!-- 文字 -->
+                            <text x="100" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#0891b2" font-family="sans-serif">多模心探</text>
+                        </svg>
+                    </div>
+                </div>
+                <div class="md:w-1/2 md:pl-12" data-aos="fade-left">
+                    <h3 class="text-2xl font-semibold mb-4">我们的使命</h3>
+                    <p class="text-gray-600 mb-6">
+                        多模心探致力于提供尖端的情感分析技术，帮助个人甚至学校心理老师和心理医生更好地理解人类情感。通过利用人工智能和机器学习的力量，我们提供从多个数据源分析情感的综合解决方案。
+                    </p>
+                    <h3 class="text-2xl font-semibold mb-4">我们的技术</h3>
+                    <p class="text-gray-600 mb-6">
+                        我们的平台将最先进的深度学习模型与先进的信号处理技术相结合，提供准确可靠的情感分析。我们不断用最新的研究和数据更新我们的模型，以确保最佳性能。
+                    </p>
+                    <div class="flex flex-wrap gap-4">
+                        <div class="bg-gray-50 rounded-lg px-4 py-2 flex items-center">
+                            <i class="fa fa-shield text-primary mr-2"></i>
+                            <span class="text-sm">注重隐私</span>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg px-4 py-2 flex items-center">
+                            <i class="fa fa-bolt text-primary mr-2"></i>
+                            <span class="text-sm">实时分析</span>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg px-4 py-2 flex items-center">
+                            <i class="fa fa-chart-line text-primary mr-2"></i>
+                            <span class="text-sm">可操作的见解</span>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg px-4 py-2 flex items-center">
+                            <i class="fa fa-lock text-primary mr-2"></i>
+                            <span class="text-sm">安全加密</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="py-16 bg-gray-50">
+        <div class="container mx-auto px-4">
+            <div class="text-center mb-12" data-aos="fade-up">
+                <h2 class="text-3xl font-bold mb-4">联系 <span class="gradient-text">我们</span></h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">
+                    有问题或需要支持？我们随时为您解答任何疑问。
+                </p>
+            </div>
+            
+            <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-md p-8" data-aos="fade-up">
+                <form id="contact-form" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="name" class="block text-sm text-gray-700">您的姓名</label>
+                            <input type="text" id="name" name="name" class="input-field" placeholder="您的姓名" autocomplete="name">
+                        </div>
+                        <div>
+                            <label for="email" class="block text-sm text-gray-700">您的邮箱</label>
+                            <input type="email" id="email" name="email" class="input-field" placeholder="您的邮箱@example.com" autocomplete="email">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="subject" class="block text-sm text-gray-700">主题</label>
+                        <input type="text" id="subject" name="subject" class="input-field" placeholder="我们如何帮助您？" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="message" class="block text-sm text-gray-700">留言</label>
+                        <textarea id="message" name="message" rows="5" class="input-field" placeholder="您的留言..." autocomplete="off"></textarea>
+                    </div>
+                    <div class="flex justify-center">
+                        <button type="submit" class="btn-primary">
+                            <i class="fa fa-paper-plane mr-2"></i> 发送留言
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-white py-12">
+        <div class="container mx-auto px-4">
+            <div class="flex flex-col md:flex-row justify-between">
+                <div class="mb-8 md:mb-0">
+                    <div class="flex items-center space-x-3 mb-4">
+                        <div class="h-10 w-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #0891b2 0%, #14b8a6 100%);" aria-hidden="true">
+                        <svg viewBox="0 0 32 32" class="w-6 h-6 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+                            <path d="M8 16 Q12 10 16 16 T24 16" stroke="currentColor" stroke-width="2.5" fill="none"/>
+                            <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                        </svg>
+                    </div>
+                        <h2 class="text-2xl font-bold gradient-text">多模心探</h2>
+                    </div>
+                    <p class="text-gray-400 max-w-md">
+                        先进的多模态情感分析平台，帮助企业和个人更好地理解人类情感。
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-8">
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">产品</h3>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">功能</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">价格</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">文档</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">接口</a></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">公司</h3>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">关于我们</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">博客</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">招聘</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">联系我们</a></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold mb-4">法律</h3>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">隐私政策</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">服务条款</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Cookie政策</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition-colors">GDPR合规</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="border-t border-gray-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+                <p class="text-gray-400 mb-4 md:mb-0">
+                    &copy; 2025 成都东软学院算法四剑客. All rights reserved.
+                </p>
+                <div class="flex space-x-4">
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                        <i class="fa fa-twitter text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                        <i class="fa fa-linkedin text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                        <i class="fa fa-github text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition-colors">
+                        <i class="fa fa-instagram text-xl"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Back to Top Button -->
+    <button id="back-to-top" class="fixed bottom-6 right-6 bg-primary text-white w-12 h-12 rounded-full flex items-center justify-center shadow-lg opacity-0 invisible transition-all duration-300">
+        <i class="fa fa-arrow-up"></i>
+    </button>
+    
+    <!-- Change Avatar Modal -->
+    <div id="change-avatar-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">更换头像</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none close-modal">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="flex flex-col items-center mb-6">
+                <div class="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden mb-4 border-2 border-primary">
+                    <i class="fa fa-user text-gray-500 text-4xl"></i>
+                    <img id="avatar-preview" class="w-full h-full object-cover hidden" alt="Avatar Preview">
+                </div>
+                <p class="text-gray-500 text-center">点击下方按钮选择新头像</p>
+            </div>
+            
+            <div class="flex justify-center">
+                <label class="btn-primary cursor-pointer">
+                    <i class="fa fa-upload mr-2"></i> 选择图片
+                    <input type="file" id="new-avatar-upload" class="hidden" accept="image/*">
+                </label>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Change Name Modal -->
+    <div id="change-name-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">修改名字</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none close-modal">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <form id="change-name-form" class="space-y-4">
+                <div>
+                <label for="new-name" class="block text-sm text-gray-700">新名字</label>
+                <input type="text" id="new-name" name="new_name" class="input-field" placeholder="请输入您的新名字" required autocomplete="name">
+            </div>
+                
+                <div class="flex justify-end">
+                    <button type="button" class="btn-secondary mr-3 close-modal">取消</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fa fa-check mr-2"></i> 保存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Register Modal -->
+    <div id="register-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">注册账号</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none close-modal">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <form id="register-form" class="space-y-4">
+                <div>
+                    <label for="phone-number" class="block text-sm text-gray-700">手机号</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                            <i class="fa fa-phone"></i>
+                        </span>
+                        <input type="tel" id="phone-number" name="phone" class="input-field pl-10" placeholder="请输入手机号" required autocomplete="tel">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="verification-code" class="block text-sm text-gray-700">验证码</label>
+                    <div class="flex space-x-3">
+                        <div class="relative flex-1">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                                <i class="fa fa-shield"></i>
+                            </span>
+                            <input type="text" id="verification-code" name="otp" class="input-field pl-10" placeholder="请输入验证码" required autocomplete="one-time-code">
+                        </div>
+                        <button type="button" id="send-code-btn" class="btn-secondary whitespace-nowrap">
+                            发送验证码
+                        </button>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="password" class="block text-gray-700 mb-2">设置密码</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                            <i class="fa fa-lock"></i>
+                        </span>
+                        <input type="password" id="password" name="password" class="input-field pl-10" placeholder="请设置密码" required>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="confirm-password" class="block text-gray-700 mb-2">确认密码</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                            <i class="fa fa-lock"></i>
+                        </span>
+                        <input type="password" id="confirm-password" name="confirm_password" class="input-field pl-10" placeholder="请再次输入密码" required>
+                    </div>
+                </div>
+                
+                <div class="flex items-center">
+                    <input type="checkbox" id="terms" name="terms" class="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded" required>
+                    <label for="terms" class="ml-2 block text-sm text-gray-700">
+                        我已阅读并同意 <a href="#" class="text-primary hover:underline">用户协议</a> 和 <a href="#" class="text-primary hover:underline">隐私政策</a>
+                    </label>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="button" class="btn-secondary mr-3 close-modal">取消</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fa fa-user-plus mr-2"></i> 注册
+                    </button>
+                </div>
+            </form>
+            
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    已有账号？ <a href="#" id="login-link" class="text-primary hover:underline">立即登录</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Login Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-xl font-bold text-gray-800">账号登录</h3>
+                <button class="text-gray-500 hover:text-gray-700 focus:outline-none close-modal">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="login-phone" class="block text-gray-700 mb-2">手机号</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                            <i class="fa fa-phone"></i>
+                        </span>
+                        <input type="tel" id="login-phone" name="login_phone" class="input-field pl-10" placeholder="请输入手机号" required>
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="login-password" class="block text-gray-700 mb-2">密码</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+                            <i class="fa fa-lock"></i>
+                        </span>
+                        <input type="password" id="login-password" name="login_password" class="input-field pl-10" placeholder="请输入密码" required>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="remember" name="remember_me" class="w-4 h-4 text-primary focus:ring-primary border-gray-300 rounded">
+                        <label for="remember" class="ml-2 block text-sm text-gray-700">
+                            记住我
+                        </label>
+                    </div>
+                    <a href="#" class="text-sm text-primary hover:underline">忘记密码？</a>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="button" class="btn-secondary mr-3 close-modal">取消</button>
+                    <button type="submit" class="btn-primary">
+                        <i class="fa fa-sign-in mr-2"></i> 登录
+                    </button>
+                </div>
+            </form>
+            
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    还没有账号？ <a href="#" id="register-link" class="text-primary hover:underline">立即注册</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification Toast -->
+    <div id="notification" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg z-50 opacity-0 invisible transition-all duration-300">
+        <span id="notification-message"></span>
+    </div>
+
+    <!-- Basic UI Initialization -->
+    <script>
+        // Initialize AOS and basic UI functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            AOS.init({
+                duration: 800,
+                easing: 'ease-in-out',
+                once: true
+            });
+            
+            // Mobile Menu Toggle
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            
+            if (mobileMenuButton && mobileMenu) {
+                mobileMenuButton.addEventListener('click', function() {
+                    mobileMenu.classList.toggle('hidden');
+                });
+            }
+            
+            // Back to Top Button
+            const backToTopButton = document.getElementById('back-to-top');
+            
+            if (backToTopButton) {
+                window.addEventListener('scroll', function() {
+                    if (window.pageYOffset > 300) {
+                        backToTopButton.classList.remove('opacity-0', 'invisible');
+                        backToTopButton.classList.add('opacity-100', 'visible');
+                    } else {
+                        backToTopButton.classList.remove('opacity-100', 'visible');
+                        backToTopButton.classList.add('opacity-0', 'invisible');
+                    }
+                });
+                
+                backToTopButton.addEventListener('click', function() {
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth'
+                    });
+                });
+            }
+            
+            // Tab Navigation - 支持桌面端和移动端
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+            const mobileTabToggle = document.getElementById('mobile-tab-toggle');
+            const mobileTabMenu = document.getElementById('mobile-tab-menu');
+            const currentTabLabel = document.getElementById('current-tab-label');
+            const tabChevron = document.getElementById('tab-chevron');
+            
+            // 切换Tab函数
+            function switchTab(tabId, tabLabel, tabIcon) {
+                // Remove active class from all tabs
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('tab-active');
+                    btn.setAttribute('aria-selected', 'false');
+                });
+                tabPanes.forEach(pane => pane.classList.add('hidden'));
+                
+                // Add active class to selected tab
+                const selectedBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+                if (selectedBtn) {
+                    selectedBtn.classList.add('tab-active');
+                    selectedBtn.setAttribute('aria-selected', 'true');
+                }
+                
+                // Show target pane
+                const targetTab = document.getElementById(`${tabId}-tab`);
+                if (targetTab) {
+                    targetTab.classList.remove('hidden');
+                }
+                
+                // Update mobile dropdown label
+                if (currentTabLabel && tabLabel) {
+                    currentTabLabel.textContent = tabLabel;
+                }
+            }
+            
+            if (tabButtons.length > 0 && tabPanes.length > 0) {
+                tabButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const tabId = this.getAttribute('data-tab');
+                        const tabLabel = this.querySelector('span')?.textContent || tabId;
+                        switchTab(tabId, tabLabel);
+                        
+                        // Close mobile menu if open
+                        if (mobileTabMenu && !mobileTabMenu.classList.contains('hidden')) {
+                            mobileTabMenu.classList.add('hidden');
+                            if (tabChevron) tabChevron.style.transform = 'rotate(0deg)';
+                            if (mobileTabToggle) mobileTabToggle.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                });
+            }
+            
+            // Mobile Tab Dropdown Toggle
+            if (mobileTabToggle && mobileTabMenu) {
+                mobileTabToggle.addEventListener('click', function() {
+                    const isOpen = !mobileTabMenu.classList.contains('hidden');
+                    mobileTabMenu.classList.toggle('hidden');
+                    if (tabChevron) {
+                        tabChevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+                    }
+                    this.setAttribute('aria-expanded', !isOpen);
+                });
+                
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!mobileTabToggle.contains(e.target) && !mobileTabMenu.contains(e.target)) {
+                        mobileTabMenu.classList.add('hidden');
+                        if (tabChevron) tabChevron.style.transform = 'rotate(0deg)';
+                        mobileTabToggle.setAttribute('aria-expanded', 'false');
+                    }
+                });
+            }
+            
+            // Mobile Tab Menu Options
+            if (mobileTabMenu) {
+                mobileTabMenu.querySelectorAll('[data-tab]').forEach(option => {
+                    option.addEventListener('click', function() {
+                        const tabId = this.getAttribute('data-tab');
+                        const tabLabel = this.querySelector('span')?.textContent || tabId;
+                        switchTab(tabId, tabLabel);
+                        mobileTabMenu.classList.add('hidden');
+                        if (tabChevron) tabChevron.style.transform = 'rotate(0deg)';
+                        if (mobileTabToggle) mobileTabToggle.setAttribute('aria-expanded', 'false');
+                    });
+                });
+            }
+
+            // Feature Buttons
+            const featureButtons = document.querySelectorAll('.feature-btn');
+            const analysisTool = document.getElementById('analysis-tool');
+            
+            if (featureButtons.length > 0 && analysisTool) {
+                featureButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const feature = this.getAttribute('data-feature');
+                        
+                        // Scroll to analysis tool
+                        analysisTool.scrollIntoView({ behavior: 'smooth' });
+                        analysisTool.classList.remove('hidden');
+                        
+                        // Activate corresponding tab
+                        tabButtons.forEach(btn => {
+                            if (btn.getAttribute('data-tab') === feature) {
+                                btn.click();
+                            }
+                        });
+                    });
+                });
+            }
+            
+            // Get Started Button
+            const getStartedBtn = document.getElementById('get-started-btn');
+
+            if (getStartedBtn && analysisTool) {
+                getStartedBtn.addEventListener('click', function() {
+                    analysisTool.scrollIntoView({ behavior: 'smooth' });
+                    analysisTool.classList.remove('hidden');
+                });
+            }
+
+            // File Upload Visual Feedback
+            function updateUploadArea(fileInput, hintEl, selectedEl, fileNameEl) {
+                if (!fileInput || !hintEl || !selectedEl || !fileNameEl) return;
+                fileInput.addEventListener('change', function() {
+                    if (this.files && this.files[0]) {
+                        fileNameEl.textContent = this.files[0].name;
+                        hintEl.classList.add('hidden');
+                        selectedEl.classList.remove('hidden');
+                        selectedEl.classList.add('flex');
+                        // Update border to indicate selection
+                        const label = this.closest('label');
+                        if (label) {
+                            label.classList.remove('border-gray-300');
+                            label.classList.add('border-primary', 'bg-primary/5');
+                        }
+                    } else {
+                        hintEl.classList.remove('hidden');
+                        selectedEl.classList.add('hidden');
+                        selectedEl.classList.remove('flex');
+                    }
+                });
+            }
+
+            updateUploadArea(
+                document.getElementById('audio-file'),
+                document.getElementById('audio-upload-hint'),
+                document.getElementById('audio-upload-selected'),
+                document.getElementById('audio-file-name')
+            );
+            updateUploadArea(
+                document.getElementById('image-file'),
+                document.getElementById('image-upload-hint'),
+                document.getElementById('image-upload-selected'),
+                document.getElementById('image-file-name')
+            );
+
+            // updateImageUploadArea helper used by camera capture
+            window.updateImageUploadArea = function(file, type) {
+                const hintEl = document.getElementById(`${type}-upload-hint`);
+                const selectedEl = document.getElementById(`${type}-upload-selected`);
+                const fileNameEl = document.getElementById(`${type}-file-name`);
+                if (file && hintEl && selectedEl && fileNameEl) {
+                    fileNameEl.textContent = file.name;
+                    hintEl.classList.add('hidden');
+                    selectedEl.classList.remove('hidden');
+                    selectedEl.classList.add('flex');
+                }
+            };
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Contact Form
+            const contactForm = document.getElementById('contact-form');
+            
+            contactForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const name = document.getElementById('name').value;
+                const email = document.getElementById('email').value;
+                const subject = document.getElementById('subject').value;
+                const message = document.getElementById('message').value;
+                
+                if (!name || !email || !subject || !message) {
+                    alert('请填写所有字段。');
+                    return;
+                }
+                
+                // 模拟表单提交
+                alert('感谢您的留言！我们会尽快回复您。');
+                contactForm.reset();
+            });
+        });
+
+        
+        // Simulate Text Analysis
+        function simulateTextAnalysis(text) {
+            const textResults = document.getElementById('text-results');
+            const textPlaceholder = document.getElementById('text-placeholder');
+            
+            // Show loading state
+            textPlaceholder.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div><p class="text-gray-500">正在分析文本...</p></div>';
+            
+            // Simulate API call with setTimeout
+            setTimeout(function() {
+                // Hide placeholder, show results
+                textPlaceholder.classList.add('hidden');
+                textResults.classList.remove('hidden');
+                
+                // Generate random sentiment scores
+                const positiveScore = Math.floor(Math.random() * 50) + 50; // 50-100
+                const negativeScore = 100 - positiveScore;
+                
+                // Update results
+                document.getElementById('sentiment-label').textContent = positiveScore > 70 ? '积极' : positiveScore > 40 ? '中性' : '消极';
+                document.getElementById('sentiment-score').textContent = `${positiveScore}%`;
+                document.getElementById('positive-score').textContent = `${positiveScore}%`;
+                document.getElementById('negative-score').textContent = `${negativeScore}%`;
+                
+                // Animate bars
+                gsap.to('#positive-bar', { width: `${positiveScore}%`, duration: 1 });
+                gsap.to('#negative-bar', { width: `${negativeScore}%`, duration: 1 });
+            }, 1500);
+        }
+        
+        // Simulate Audio Analysis
+        function simulateAudioAnalysis() {
+            const audioResults = document.getElementById('audio-results');
+            const audioPlaceholder = document.getElementById('audio-placeholder');
+            
+            // Show loading state
+            audioPlaceholder.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div><p class="text-gray-500">正在分析音频...</p></div>';
+            
+            // Simulate API call with setTimeout
+            setTimeout(function() {
+                // Hide placeholder, show results
+                audioPlaceholder.classList.add('hidden');
+                audioResults.classList.remove('hidden');
+                
+                // Generate random emotion scores
+                const happyScore = Math.floor(Math.random() * 50) + 50; // 50-100
+                const sadScore = Math.floor(Math.random() * 20); // 0-20
+                const angryScore = Math.floor(Math.random() * 20); // 0-20
+                const neutralScore = 100 - happyScore - sadScore - angryScore;
+                
+                // Update results
+                document.getElementById('audio-emotion-label').textContent = '开心';
+                document.getElementById('audio-emotion-score').textContent = `${happyScore}%`;
+                document.getElementById('happy-score').textContent = `${happyScore}%`;
+                document.getElementById('sad-score').textContent = `${sadScore}%`;
+                document.getElementById('angry-score').textContent = `${angryScore}%`;
+                document.getElementById('neutral-score').textContent = `${neutralScore}%`;
+                
+                // Animate bars
+                gsap.to('#happy-bar', { width: `${happyScore}%`, duration: 1 });
+                gsap.to('#sad-bar', { width: `${sadScore}%`, duration: 1 });
+                gsap.to('#angry-bar', { width: `${angryScore}%`, duration: 1 });
+                gsap.to('#neutral-bar', { width: `${neutralScore}%`, duration: 1 });
+            }, 2000);
+        }
+        
+        // Simulate Face Analysis
+        function simulateFaceAnalysis() {
+            const faceResults = document.getElementById('face-results');
+            const facePlaceholder = document.getElementById('face-placeholder');
+            
+            // Show loading state
+            facePlaceholder.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div><p class="text-gray-500">正在分析人脸...</p></div>';
+            
+            // Simulate API call with setTimeout
+            setTimeout(function() {
+                // Hide placeholder, show results
+                facePlaceholder.classList.add('hidden');
+                faceResults.classList.remove('hidden');
+                
+                // Generate random emotion scores
+                const surpriseScore = Math.floor(Math.random() * 50) + 50; // 50-100
+                const angryScore = Math.floor(Math.random() * 10); // 0-10
+                const disgustScore = Math.floor(Math.random() * 5); // 0-5
+                const fearScore = Math.floor(Math.random() * 15); // 0-15
+                const happyScore = Math.floor(Math.random() * 10); // 0-10
+                const sadScore = Math.floor(Math.random() * 5); // 0-5
+                const neutralScore = 100 - surpriseScore - angryScore - disgustScore - fearScore - happyScore - sadScore;
+                
+                // Update results
+                document.getElementById('face-emotion-label').textContent = '惊讶';
+                document.getElementById('face-emotion-score').textContent = `${surpriseScore}%`;
+                document.getElementById('face-angry-score').textContent = `${angryScore}%`;
+                document.getElementById('face-disgust-score').textContent = `${disgustScore}%`;
+                document.getElementById('face-fear-score').textContent = `${fearScore}%`;
+                document.getElementById('face-happy-score').textContent = `${happyScore}%`;
+                document.getElementById('face-sad-score').textContent = `${sadScore}%`;
+                document.getElementById('face-surprise-score').textContent = `${surpriseScore}%`;
+                document.getElementById('face-anxiety-score').textContent = `${anxietyScore}%`;
+                document.getElementById('face-depression-score').textContent = `${depressionScore}%`;
+                document.getElementById('face-neutral-score').textContent = `${neutralScore}%`;
+                
+                // Animate bars
+                gsap.to('#face-angry-bar', { width: `${angryScore}%`, duration: 1 });
+                gsap.to('#face-disgust-bar', { width: `${disgustScore}%`, duration: 1 });
+                gsap.to('#face-fear-bar', { width: `${fearScore}%`, duration: 1 });
+                gsap.to('#face-happy-bar', { width: `${happyScore}%`, duration: 1 });
+                gsap.to('#face-sad-bar', { width: `${sadScore}%`, duration: 1 });
+                gsap.to('#face-surprise-bar', { width: `${surpriseScore}%`, duration: 1 });
+                gsap.to('#face-anxiety-bar', { width: `${anxietyScore}%`, duration: 1 });
+                gsap.to('#face-depression-bar', { width: `${depressionScore}%`, duration: 1 });
+                gsap.to('#face-neutral-bar', { width: `${neutralScore}%`, duration: 1 });
+            }, 2000);
+        }
+        
+        // Simulate Image Analysis
+        function simulateImageAnalysis() {
+            const imageResults = document.getElementById('image-results');
+            const imagePlaceholder = document.getElementById('image-placeholder');
+            
+            // Show loading state
+            imagePlaceholder.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div><p class="text-gray-500">正在分析图片...</p></div>';
+            
+            // Simulate API call with setTimeout
+            setTimeout(function() {
+                // Hide placeholder, show results
+                imagePlaceholder.classList.add('hidden');
+                imageResults.classList.remove('hidden');
+                
+                // Generate random emotion scores
+                const happyScore = Math.floor(Math.random() * 50) + 50; // 50-100
+                const angryScore = Math.floor(Math.random() * 10); // 0-10
+                const disgustScore = Math.floor(Math.random() * 5); // 0-5
+                const fearScore = Math.floor(Math.random() * 10); // 0-10
+                const sadScore = Math.floor(Math.random() * 5); // 0-5
+                const surpriseScore = Math.floor(Math.random() * 10); // 0-10
+                const neutralScore = 100 - happyScore - angryScore - disgustScore - fearScore - sadScore - surpriseScore;
+                
+                // Update results
+                document.getElementById('image-emotion-label').textContent = '快乐';
+                document.getElementById('image-emotion-score').textContent = `${happyScore}%`;
+                document.getElementById('image-angry-score').textContent = `${angryScore}%`;
+                document.getElementById('image-disgust-score').textContent = `${disgustScore}%`;
+                document.getElementById('image-fear-score').textContent = `${fearScore}%`;
+                document.getElementById('image-happy-score').textContent = `${happyScore}%`;
+                document.getElementById('image-sad-score').textContent = `${sadScore}%`;
+                document.getElementById('image-surprise-score').textContent = `${surpriseScore}%`;
+                document.getElementById('image-neutral-score').textContent = `${neutralScore}%`;
+                
+                // Animate bars
+                gsap.to('#image-angry-bar', { width: `${angryScore}%`, duration: 1 });
+                gsap.to('#image-disgust-bar', { width: `${disgustScore}%`, duration: 1 });
+                gsap.to('#image-fear-bar', { width: `${fearScore}%`, duration: 1 });
+                gsap.to('#image-happy-bar', { width: `${happyScore}%`, duration: 1 });
+                gsap.to('#image-sad-bar', { width: `${sadScore}%`, duration: 1 });
+                gsap.to('#image-surprise-bar', { width: `${surpriseScore}%`, duration: 1 });
+                gsap.to('#image-neutral-bar', { width: `${neutralScore}%`, duration: 1 });
+            }, 2000);
+        }
+        
+        // Simulate rPPG Analysis
+        function simulateRppgAnalysis() {
+            const rppgResults = document.getElementById('rppg-results');
+            const rppgPlaceholder = document.getElementById('rppg-placeholder');
+            const startRppgBtn = document.getElementById('start-rppg-btn');
+            const stopRppgBtn = document.getElementById('stop-rppg-btn');
+            const rppgStatus = document.getElementById('rppg-status');
+            const cameraPreview = document.getElementById('rppg-camera-preview');
+            
+            // Hide status and stop button
+            stopRppgBtn.classList.add('hidden');
+            rppgStatus.classList.add('hidden');
+            startRppgBtn.classList.remove('hidden');
+            
+            // Show loading state
+            rppgPlaceholder.innerHTML = '<div class="flex flex-col items-center justify-center py-12"><div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div><p class="text-gray-500">正在处理数据...</p></div>';
+            
+            // Simulate API call with setTimeout
+            setTimeout(function() {
+                // Hide placeholder, show results
+                rppgPlaceholder.classList.add('hidden');
+                rppgResults.classList.remove('hidden');
+                
+                // Reset camera preview
+                cameraPreview.innerHTML = '<i class="fa fa-video-camera text-gray-400 text-4xl"></i>';
+                
+                // Generate random heart rate
+                const heartRate = Math.floor(Math.random() * 20) + 60; // 60-80
+                
+                // Update results
+                document.getElementById('heart-rate-value').textContent = heartRate;
+                
+                // Create HRV chart
+                const ctx = document.getElementById('hrv-chart').getContext('2d');
+                
+                // Generate random HRV data
+                const labels = Array.from({ length: 20 }, (_, i) => i + 1);
+                const data = Array.from({ length: 20 }, () => Math.floor(Math.random() * 10) + 50);
+                
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'HRV',
+                            data: data,
+                            borderColor: '#3B82F6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: false,
+                                grid: {
+                                    display: true,
+                                    color: 'rgba(0, 0, 0, 0.05)'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                // Generate random emotional state
+                const emotionalState = Math.floor(Math.random() * 50) + 50; // 50-100
+                
+                // Update emotional state
+                document.getElementById('emotional-state-bar').style.width = `${emotionalState}%`;
+                document.getElementById('emotional-state-label').textContent = emotionalState > 70 ? '平静' : emotionalState > 40 ? '中性' : '紧张';
+                
+                // Animate emotional state bar
+                gsap.to('#emotional-state-bar', { width: `${emotionalState}%`, duration: 1 });
+            }, 2000);
+        }
+        
+        // Psychological Assessment
+        function initPsychologicalAssessment() {
+            // DOM Elements
+            const startAssessmentBtn = document.getElementById('start-assessment-btn');
+            const assessmentStart = document.getElementById('assessment-start');
+            const assessmentQuestions = document.getElementById('assessment-questions');
+            const assessmentResults = document.getElementById('assessment-results');
+            const questionCategory = document.getElementById('question-category');
+            const questionText = document.getElementById('question-text');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const prevQuestionBtn = document.getElementById('prev-question-btn');
+            const nextQuestionBtn = document.getElementById('next-question-btn');
+            const restartAssessmentBtn = document.getElementById('restart-assessment-btn');
+            const downloadResultsBtn = document.getElementById('download-results-btn');
+            const professionalHelp = document.getElementById('professional-help');
+            
+            // Assessment state
+            let currentQuestionIndex = 0;
+            let userAnswers = [];
+            let assessmentTimer;
+            let elapsedTime = 0; // 已用时间（秒）
+            
+            // 进度保存键名
+            const PROGRESS_KEY = 'emotion_assessment_progress';
+            
+            // 检查是否有保存的进度
+            function checkSavedProgress() {
+                const saved = localStorage.getItem(PROGRESS_KEY);
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    const confirmed = confirm(`检测到未完成的评估（进度：${data.currentQuestion + 1}/100），是否继续？\n\n点击"确定"继续上次评估，点击"取消"重新开始。`);
+                    if (confirmed) {
+                        currentQuestionIndex = data.currentQuestion;
+                        userAnswers = data.answers;
+                        elapsedTime = data.elapsedTime || 0;
+                        return true;
+                    } else {
+                        localStorage.removeItem(PROGRESS_KEY);
+                    }
+                }
+                return false;
+            }
+            
+            // 保存进度
+            function saveProgress() {
+                const data = {
+                    currentQuestion: currentQuestionIndex,
+                    answers: userAnswers,
+                    elapsedTime: elapsedTime,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(PROGRESS_KEY, JSON.stringify(data));
+            }
+            
+            // 清除保存的进度
+            function clearSavedProgress() {
+                localStorage.removeItem(PROGRESS_KEY);
+            }
+            
+            // 100 Psychological assessment questions (simplified for demo)
+            const questions = [
+                // 情绪状态 (20题)
+                { id: 1, text: "我感到情绪低落、沮丧或绝望。", category: "情绪状态" },
+                { id: 2, text: "我对做事情失去了兴趣或乐趣。", category: "情绪状态" },
+                { id: 3, text: "我感到疲倦或精力不足。", category: "情绪状态" },
+                { id: 4, text: "我感到自卑，或认为自己是个失败者。", category: "情绪状态" },
+                { id: 5, text: "我难以集中注意力。", category: "情绪状态" },
+                { id: 6, text: "我有睡眠障碍（入睡困难、早醒或睡眠过多）。", category: "情绪状态" },
+                { id: 7, text: "我的食欲发生了明显变化（食欲增加或减少）。", category: "情绪状态" },
+                { id: 8, text: "我感到烦躁或易怒。", category: "情绪状态" },
+                { id: 9, text: "我感到焦虑或紧张。", category: "情绪状态" },
+                { id: 10, text: "我感到孤独或与他人隔离。", category: "情绪状态" },
+                { id: 11, text: "我对未来感到希望。", category: "情绪状态" },
+                { id: 12, text: "我能够体验到快乐或满足感。", category: "情绪状态" },
+                { id: 13, text: "我的情绪波动较大。", category: "情绪状态" },
+                { id: 14, text: "我感到紧张或坐立不安。", category: "情绪状态" },
+                { id: 15, text: "我感到恐慌或害怕。", category: "情绪状态" },
+                { id: 16, text: "我感到愤怒或怨恨。", category: "情绪状态" },
+                { id: 17, text: "我感到内疚或自责。", category: "情绪状态" },
+                { id: 18, text: "我感到无助或绝望。", category: "情绪状态" },
+                { id: 19, text: "我感到麻木或情感迟钝。", category: "情绪状态" },
+                { id: 20, text: "我能够从日常活动中获得乐趣。", category: "情绪状态" },
+                
+                // 社交能力 (20题)
+                { id: 21, text: "我喜欢与他人交往。", category: "社交能力" },
+                { id: 22, text: "我有亲密的朋友或家人。", category: "社交能力" },
+                { id: 23, text: "我能够表达自己的想法和感受。", category: "社交能力" },
+                { id: 24, text: "我能够理解他人的感受。", category: "社交能力" },
+                { id: 25, text: "我在社交场合感到舒适。", category: "社交能力" },
+                { id: 26, text: "我能够建立新的人际关系。", category: "社交能力" },
+                { id: 27, text: "我感到被他人接受和尊重。", category: "社交能力" },
+                { id: 28, text: "我能够解决人际冲突。", category: "社交能力" },
+                { id: 29, text: "我感到孤独或与他人隔离。", category: "社交能力" },
+                { id: 30, text: "我害怕被拒绝或批评。", category: "社交能力" },
+                { id: 31, text: "我能够信任他人。", category: "社交能力" },
+                { id: 32, text: "我感到自己是团队的一部分。", category: "社交能力" },
+                { id: 33, text: "我避免社交场合。", category: "社交能力" },
+                { id: 34, text: "我感到难以与他人沟通。", category: "社交能力" },
+                { id: 35, text: "我担心他人对我的看法。", category: "社交能力" },
+                { id: 36, text: "我能够支持他人。", category: "社交能力" },
+                { id: 37, text: "我感到自己与他人有情感联系。", category: "社交能力" },
+                { id: 38, text: "我感到自己在社交方面不够自信。", category: "社交能力" },
+                { id: 39, text: "我喜欢参加集体活动。", category: "社交能力" },
+                { id: 40, text: "我感到自己在社交方面很有能力。", category: "社交能力" },
+                
+                // 压力水平 (20题)
+                { id: 41, text: "我感到压力很大。", category: "压力水平" },
+                { id: 42, text: "我感到身体紧张或紧绷。", category: "压力水平" },
+                { id: 43, text: "我有头痛、肌肉酸痛或其他身体不适。", category: "压力水平" },
+                { id: 44, text: "我感到疲惫或精力不足。", category: "压力水平" },
+                { id: 45, text: "我难以放松。", category: "压力水平" },
+                { id: 46, text: "我感到时间紧迫或被任务压得喘不过气。", category: "压力水平" },
+                { id: 47, text: "我感到焦虑或担忧。", category: "压力水平" },
+                { id: 48, text: "我有消化问题（如胃痛、腹泻或便秘）。", category: "压力水平" },
+                { id: 49, text: "我感到心跳加速或心悸。", category: "压力水平" },
+                { id: 50, text: "我感到呼吸急促或呼吸困难。", category: "压力水平" },
+                { id: 51, text: "我能够有效地管理压力。", category: "压力水平" },
+                { id: 52, text: "我有良好的应对压力的策略。", category: "压力水平" },
+                { id: 53, text: "我感到不堪重负。", category: "压力水平" },
+                { id: 54, text: "我感到自己无法控制生活中的重要事情。", category: "压力水平" },
+                { id: 55, text: "我感到自己能够应对挑战。", category: "压力水平" },
+                { id: 56, text: "我感到自己的生活很平衡。", category: "压力水平" },
+                { id: 57, text: "我经常感到匆忙或急躁。", category: "压力水平" },
+                { id: 58, text: "我有充足的休息和放松时间。", category: "压力水平" },
+                { id: 59, text: "我感到自己的工作或学习压力很大。", category: "压力水平" },
+                { id: 60, text: "我感到自己能够放松和享受生活。", category: "压力水平" },
+                
+                // 自我认知 (20题)
+                { id: 61, text: "我对自己感到满意。", category: "自我认知" },
+                { id: 62, text: "我了解自己的优点和缺点。", category: "自我认知" },
+                { id: 63, text: "我有清晰的人生目标。", category: "自我认知" },
+                { id: 64, text: "我感到自己有价值。", category: "自我认知" },
+                { id: 65, text: "我接受自己的不完美。", category: "自我认知" },
+                { id: 66, text: "我感到自己有能力应对挑战。", category: "自我认知" },
+                { id: 67, text: "我对自己的未来感到乐观。", category: "自我认知" },
+                { id: 68, text: "我感到自己在不断成长和进步。", category: "自我认知" },
+                { id: 69, text: "我有良好的自尊。", category: "自我认知" },
+                { id: 70, text: "我感到自己与他人平等。", category: "自我认知" },
+                { id: 71, text: "我经常自我怀疑。", category: "自我认知" },
+                { id: 72, text: "我感到自己不如他人。", category: "自我认知" },
+                { id: 73, text: "我有明确的价值观和信念。", category: "自我认知" },
+                { id: 74, text: "我感到自己能够做出明智的决策。", category: "自我认知" },
+                { id: 75, text: "我感到自己有创造力。", category: "自我认知" },
+                { id: 76, text: "我感到自己有领导能力。", category: "自我认知" },
+                { id: 77, text: "我感到自己在社交方面很有能力。", category: "自我认知" },
+                { id: 78, text: "我感到自己在学习或工作方面很有能力。", category: "自我认知" },
+                { id: 79, text: "我感到自己能够表达自己的想法和感受。", category: "自我认知" },
+                { id: 80, text: "我感到自己有良好的人际关系。", category: "自我认知" },
+                
+                // 生活满意度 (20题)
+                { id: 81, text: "我对自己的生活感到满意。", category: "生活满意度" },
+                { id: 82, text: "我感到自己的生活有意义。", category: "生活满意度" },
+                { id: 83, text: "我感到自己的生活很充实。", category: "生活满意度" },
+                { id: 84, text: "我感到自己的生活很平衡。", category: "生活满意度" },
+                { id: 85, text: "我感到自己的生活很幸福。", category: "生活满意度" },
+                { id: 86, text: "我感到自己的生活有目标。", category: "生活满意度" },
+                { id: 87, text: "我感到自己的生活有方向。", category: "生活满意度" },
+                { id: 88, text: "我感到自己的生活很有价值。", category: "生活满意度" },
+                { id: 89, text: "我感到自己的生活很成功。", category: "生活满意度" },
+                { id: 90, text: "我感到自己的生活很快乐。", category: "生活满意度" },
+                { id: 91, text: "我感到自己的生活很有成就感。", category: "生活满意度" },
+                { id: 92, text: "我感到自己的生活很有希望。", category: "生活满意度" },
+                { id: 93, text: "我感到自己的生活很有意义。", category: "生活满意度" },
+                { id: 94, text: "我感到自己的生活很有乐趣。", category: "生活满意度" },
+                { id: 95, text: "我感到自己的生活很有激情。", category: "生活满意度" },
+                { id: 96, text: "我感到自己的生活很有创造力。", category: "生活满意度" },
+                { id: 97, text: "我感到自己的生活很有冒险精神。", category: "生活满意度" },
+                { id: 98, text: "我感到自己的生活很有挑战性。", category: "生活满意度" },
+                { id: 99, text: "我感到自己的生活很有安全感。", category: "生活满意度" },
+                { id: 100, text: "我感到自己的生活很有自由。", category: "生活满意度" }
+            ];
+            
+            // Start assessment
+            startAssessmentBtn.addEventListener('click', function() {
+                // Check for saved progress
+                const hasSavedProgress = checkSavedProgress();
+                
+                assessmentStart.classList.add('hidden');
+                assessmentQuestions.classList.remove('hidden');
+                
+                // Initialize user answers array if no saved progress
+                if (!hasSavedProgress) {
+                    userAnswers = Array(questions.length).fill(null);
+                    elapsedTime = 0;
+                }
+                
+                // Load question (either from saved progress or first question)
+                loadQuestion(currentQuestionIndex);
+            });
+            
+            // Load question
+            function loadQuestion(index) {
+                // Update current question index
+                currentQuestionIndex = index;
+                
+                // Get question data
+                const question = questions[index];
+                
+                // Update UI
+                questionCategory.textContent = question.category;
+                questionText.textContent = question.text;
+                
+                // Update progress
+                const progress = Math.round((index + 1) / questions.length * 100);
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `${index + 1}/${questions.length}`;
+                
+                // Update group indicator (每10题为一组)
+                updateGroupIndicator(index);
+                
+                // Update navigation buttons
+                prevQuestionBtn.disabled = index === 0;
+                prevQuestionBtn.classList.toggle('opacity-50', index === 0);
+                prevQuestionBtn.classList.toggle('cursor-not-allowed', index === 0);
+                
+                if (index === questions.length - 1) {
+                    nextQuestionBtn.textContent = '提交评估';
+                    nextQuestionBtn.innerHTML = '提交评估 <i class="fa fa-check ml-2" aria-hidden="true"></i>';
+                } else {
+                    nextQuestionBtn.textContent = '下一题';
+                    nextQuestionBtn.innerHTML = '下一题 <i class="fa fa-arrow-right ml-2" aria-hidden="true"></i>';
+                }
+                
+                // Reset radio buttons
+                document.querySelectorAll('input[name="answer"]').forEach(radio => {
+                    radio.checked = false;
+                });
+                
+                // Set previous answer if exists
+                if (userAnswers[index] !== null) {
+                    document.getElementById(`option-${userAnswers[index]}`).checked = true;
+                }
+                
+                // Continue elapsed time timer
+                resetQuestionTimer();
+            }
+            
+            // Update group indicator
+            function updateGroupIndicator(index) {
+                const groupSize = 10;
+                const currentGroup = Math.floor(index / groupSize) + 1;
+                const totalGroups = Math.ceil(questions.length / groupSize);
+                const startQuestion = (currentGroup - 1) * groupSize + 1;
+                const endQuestion = Math.min(currentGroup * groupSize, questions.length);
+                
+                // Update group text
+                const currentGroupEl = document.getElementById('current-group');
+                const groupProgressEl = document.getElementById('group-progress');
+                if (currentGroupEl) currentGroupEl.textContent = `第 ${currentGroup} 组`;
+                if (groupProgressEl) groupProgressEl.textContent = `${startQuestion}-${endQuestion} 题`;
+                
+                // Update group segments
+                const groupSegmentsEl = document.getElementById('group-segments');
+                if (groupSegmentsEl) {
+                    groupSegmentsEl.innerHTML = '';
+                    for (let i = 1; i <= totalGroups; i++) {
+                        const segment = document.createElement('div');
+                        segment.className = 'h-1.5 flex-1 rounded-full transition-all duration-300';
+                        if (i < currentGroup) {
+                            segment.classList.add('bg-green-500'); // 已完成组
+                        } else if (i === currentGroup) {
+                            segment.classList.add('bg-blue-500'); // 当前组
+                        } else {
+                            segment.classList.add('bg-gray-200'); // 未开始组
+                        }
+                        groupSegmentsEl.appendChild(segment);
+                    }
+                    // Update ARIA attributes
+                    groupSegmentsEl.setAttribute('aria-valuenow', currentGroup);
+                    groupSegmentsEl.setAttribute('aria-valuemax', totalGroups);
+                }
+            }
+            
+            // Start elapsed time timer (改为已用时显示，不限制答题时间)
+            function resetQuestionTimer() {
+                clearInterval(assessmentTimer);
+                updateTimerDisplay();
+                
+                // Start timer to track elapsed time
+                assessmentTimer = setInterval(function() {
+                    elapsedTime++;
+                    updateTimerDisplay();
+                    
+                    // Auto-save progress every 30 seconds
+                    if (elapsedTime % 30 === 0) {
+                        saveProgress();
+                    }
+                }, 1000);
+            }
+            
+            // Update timer display (显示已用时)
+            function updateTimerDisplay() {
+                const minutes = Math.floor(elapsedTime / 60);
+                const seconds = elapsedTime % 60;
+                const elapsedTimeEl = document.getElementById('elapsed-time');
+                if (elapsedTimeEl) {
+                    const timeText = elapsedTimeEl.querySelector('span');
+                    if (timeText) {
+                        timeText.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                }
+            }
+            
+            // Previous question
+            prevQuestionBtn.addEventListener('click', function() {
+                if (currentQuestionIndex > 0) {
+                    loadQuestion(currentQuestionIndex - 1);
+                }
+            });
+            
+            // Next question
+            nextQuestionBtn.addEventListener('click', nextQuestion);
+            
+            function nextQuestion() {
+                // Save current answer
+                const selectedAnswer = document.querySelector('input[name="answer"]:checked');
+                
+                if (!selectedAnswer) {
+                    alert('请选择一个选项。');
+                    return;
+                }
+                
+                userAnswers[currentQuestionIndex] = parseInt(selectedAnswer.value);
+                
+                // Save progress after each answer
+                saveProgress();
+                
+                // Check if last question
+                if (currentQuestionIndex === questions.length - 1) {
+                    // Calculate results
+                    calculateResults();
+                    
+                    // Show results
+                    assessmentQuestions.classList.add('hidden');
+                    assessmentResults.classList.remove('hidden');
+                    
+                    // Clear timer
+                    clearInterval(assessmentTimer);
+                    
+                    // Clear saved progress on completion
+                    clearSavedProgress();
+                } else {
+                    // Load next question
+                    loadQuestion(currentQuestionIndex + 1);
+                }
+            }
+            
+            // Calculate results
+            function calculateResults() {
+                // Calculate total score
+                const totalScore = userAnswers.reduce((sum, score) => sum + score, 0);
+                
+                // Calculate category scores
+                const categories = ['情绪状态', '社交能力', '压力水平', '自我认知', '生活满意度'];
+                const categoryScores = {};
+                
+                categories.forEach(category => {
+                    const categoryQuestions = questions.filter(q => q.category === category);
+                    const categoryAnswers = categoryQuestions.map(q => userAnswers[questions.findIndex(question => question.id === q.id)]);
+                    const categoryScore = categoryAnswers.reduce((sum, score) => sum + score, 0) / categoryAnswers.length;
+                    categoryScores[category] = categoryScore;
+                });
+                
+                // Determine overall status
+                let overallStatus, statusColor, statusDescription;
+                
+                if (totalScore < 150) {
+                    overallStatus = '健康';
+                    statusColor = '#10B981'; // Green
+                    statusDescription = '您的心理健康状况良好';
+                } else if (totalScore < 250) {
+                    overallStatus = '轻度风险';
+                    statusColor = '#F59E0B'; // Yellow
+                    statusDescription = '您可能需要关注自己的心理健康';
+                } else {
+                    overallStatus = '建议介入';
+                    statusColor = '#EF4444'; // Red
+                    statusDescription = '建议寻求专业心理支持';
+                    
+                    // Show professional help section
+                    professionalHelp.classList.remove('hidden');
+                }
+                
+                // Update UI
+                document.getElementById('status-text').textContent = overallStatus;
+                document.getElementById('status-description').textContent = statusDescription;
+                
+                // Create dashboard chart
+                createDashboardChart(statusColor);
+                
+                // Update category analysis
+                updateCategoryAnalysis(categoryScores);
+                
+                // Generate recommendations
+                generateRecommendations(totalScore, categoryScores);
+            }
+            
+            // Create dashboard chart
+            function createDashboardChart(statusColor) {
+                const ctx = document.getElementById('status-dashboard').getContext('2d');
+                
+                // Calculate percentage based on status
+                let percentage;
+                if (statusColor === '#10B981') {
+                    percentage = 85; // Green
+                } else if (statusColor === '#F59E0B') {
+                    percentage = 60; // Yellow
+                } else {
+                    percentage = 30; // Red
+                }
+                
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [percentage, 100 - percentage],
+                            backgroundColor: [
+                                statusColor,
+                                'rgba(200, 200, 200, 0.2)'
+                            ],
+                            borderWidth: 0,
+                            cutout: '80%'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                enabled: false
+                            }
+                        }
+                    },
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true
+                    }
+                });
+            }
+            
+            // Update category analysis
+            function updateCategoryAnalysis(categoryScores) {
+                // Map category names to element IDs
+                const categoryMap = {
+                    '情绪状态': 'emotional-stability',
+                    '社交能力': 'social-ability',
+                    '压力水平': 'stress-level',
+                    '自我认知': 'self-awareness',
+                    '生活满意度': 'life-satisfaction'
+                };
+                
+                // Update each category
+                Object.keys(categoryScores).forEach(category => {
+                    const score = categoryScores[category];
+                    const percentage = Math.round((score / 5) * 100); // Convert 1-5 scale to percentage
+                    const elementId = categoryMap[category];
+                    
+                    if (elementId) {
+                        const barElement = document.getElementById(`${elementId}-bar`);
+                        const scoreElement = document.getElementById(`${elementId}-score`);
+                        
+                        if (barElement && scoreElement) {
+                            // Set score text
+                            scoreElement.textContent = `${percentage}%`;
+                            
+                            // Set bar width with animation
+                            gsap.to(barElement, { width: `${percentage}%`, duration: 1 });
+                            
+                            // Set bar color based on score
+                            if (percentage >= 70) {
+                                barElement.classList.remove('bg-yellow-500', 'bg-red-500');
+                                barElement.classList.add('bg-green-500');
+                            } else if (percentage >= 40) {
+                                barElement.classList.remove('bg-green-500', 'bg-red-500');
+                                barElement.classList.add('bg-yellow-500');
+                            } else {
+                                barElement.classList.remove('bg-green-500', 'bg-yellow-500');
+                                barElement.classList.add('bg-red-500');
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Generate recommendations
+            function generateRecommendations(totalScore, categoryScores) {
+                const recommendationsContainer = document.getElementById('recommendations-container');
+                recommendationsContainer.innerHTML = '';
+                
+                // Base recommendations
+                const recommendations = [];
+                
+                // Add recommendations based on overall score
+                if (totalScore < 150) {
+                    recommendations.push({
+                        title: '保持健康的生活方式',
+                        description: '规律作息、均衡饮食和适量运动有助于维持良好的心理健康状态。',
+                        icon: 'check',
+                        color: 'green'
+                    });
+                    
+                    recommendations.push({
+                        title: '保持社交互动',
+                        description: '与亲朋好友保持联系，参加社交活动，有助于缓解压力和焦虑。',
+                        icon: 'comments',
+                        color: 'green'
+                    });
+                } else if (totalScore < 250) {
+                    recommendations.push({
+                        title: '学习放松技巧',
+                        description: '尝试冥想、深呼吸或瑜伽等放松技巧，有助于减轻压力和改善情绪。',
+                        icon: 'lightbulb-o',
+                        color: 'yellow'
+                    });
+                    
+                    recommendations.push({
+                        title: '关注情绪变化',
+                        description: '留意自己的情绪变化，尝试记录情绪日记，了解情绪触发因素。',
+                        icon: 'heart',
+                        color: 'yellow'
+                    });
+                } else {
+                    recommendations.push({
+                        title: '寻求专业帮助',
+                        description: '建议咨询学校心理咨询中心或专业心理医生，获取更详细的评估和支持。',
+                        icon: 'exclamation-triangle',
+                        color: 'red'
+                    });
+                    
+                    recommendations.push({
+                        title: '建立支持网络',
+                        description: '与亲朋好友分享自己的感受，建立支持网络，不要独自面对困难。',
+                        icon: 'users',
+                        color: 'red'
+                    });
+                }
+                
+                // Add recommendations based on category scores
+                Object.keys(categoryScores).forEach(category => {
+                    const score = categoryScores[category];
+                    
+                    if (score < 2.5) { // Low score (1-2.5)
+                        let title, description, icon, color;
+                        
+                        switch (category) {
+                            case '情绪状态':
+                                title = '关注情绪健康';
+                                description = '尝试每天做一些让自己开心的事情，培养积极情绪。';
+                                icon = 'smile-o';
+                                color = 'yellow';
+                                break;
+                            case '社交能力':
+                                title = '提升社交技能';
+                                description = '参加社交技能培训课程，逐步提高社交自信。';
+                                icon = 'handshake-o';
+                                color = 'yellow';
+                                break;
+                            case '压力水平':
+                                title = '管理压力';
+                                description = '学习时间管理技巧，合理安排任务，避免过度压力。';
+                                icon = 'clock-o';
+                                color = 'yellow';
+                                break;
+                            case '自我认知':
+                                title = '增强自我认知';
+                                description = '尝试自我反思，了解自己的优点和缺点，接纳自己。';
+                                icon = 'user';
+                                color = 'yellow';
+                                break;
+                            case '生活满意度':
+                                title = '寻找生活意义';
+                                description = '尝试新的爱好或兴趣，寻找生活的意义和目标。';
+                                icon = 'star';
+                                color = 'yellow';
+                                break;
+                        }
+                        
+                        if (title) {
+                            recommendations.push({ title, description, icon, color });
+                        }
+                    }
+                });
+                
+                // Limit to 3 recommendations
+                const topRecommendations = recommendations.slice(0, 3);
+                
+                // Add recommendations to UI
+                topRecommendations.forEach(rec => {
+                    const recElement = document.createElement('div');
+                    recElement.className = 'flex items-start mb-4';
+                    recElement.innerHTML = `
+                        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-${rec.color}-100 flex items-center justify-center mr-4">
+                            <i class="fa fa-${rec.icon} text-${rec.color}-500"></i>
+                        </div>
+                        <div>
+                            <h5 class="font-medium mb-1">${rec.title}</h5>
+                            <p class="text-gray-600">${rec.description}</p>
+                        </div>
+                    `;
+                    recommendationsContainer.appendChild(recElement);
+                });
+            }
+            
+            // Restart assessment
+            restartAssessmentBtn.addEventListener('click', function() {
+                // Reset state
+                currentQuestionIndex = 0;
+                userAnswers = [];
+                elapsedTime = 0;
+                
+                // Clear saved progress
+                clearSavedProgress();
+                
+                // Hide results, show start screen
+                assessmentResults.classList.add('hidden');
+                assessmentStart.classList.remove('hidden');
+                
+                // Hide professional help section
+                professionalHelp.classList.add('hidden');
+            });
+            
+            // Download results
+            downloadResultsBtn.addEventListener('click', function() {
+                // In a real application, this would generate a PDF or other document
+                // For demo purposes, we'll just show a notification
+                alert('报告已生成，正在下载...');
+                
+                // Simulate download delay
+                setTimeout(function() {
+                    showNotification('报告已成功下载');
+                }, 1000);
+            });
+            
+    </script>
+    <!-- 外部脚本：核心、特性与模块 -->
+    <script src="src/js/core/app.js"></script>
+    <script src="src/js/features/text.js"></script>
+    <script src="src/js/features/audio.js"></script>
+    <script src="src/js/features/face.js"></script>
+    <script src="src/js/features/image.js"></script>
+    <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
+    <script src="js/heartbeat.js"></script>
+    <script src="src/js/features/rppg.js"></script>
+    <script src="src/js/modules/profile.js"></script>
+    <script src="src/js/modules/auth.js"></script>
+    <script src="src/js/modules/assessment.js"></script>
+    <!-- 轮播面板 JS -->
+    <script>
+    (function() {
+      const MODULES = [
+        {
+          id: 'audio',
+          label: '语音情感分析',
+          tag: 'AUDIO',
+          desc: '从语音模式、语调和音高中提取情感线索，AI 对话给出个性化反馈。',
+          color: '#f97316',
+          gradFrom: '#fff7ed',
+          gradTo: '#ffedd5',
+          icon: `<svg viewBox="0 0 64 64" class="w-10 h-10 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="32" cy="32" r="20" stroke="currentColor" stroke-width="2" opacity="0.3"/>
+            <circle cx="32" cy="32" r="12" stroke="currentColor" stroke-width="2" opacity="0.6"/>
+            <circle cx="32" cy="32" r="4" fill="currentColor"><animate attributeName="r" values="4;6;4" dur="1.5s" repeatCount="indefinite"/></circle>
+            <path d="M16 32 L12 28 M16 32 L12 36 M48 32 L52 28 M48 32 L52 36" stroke="currentColor" stroke-width="2" opacity="0.8"/>
+          </svg>`
+        },
+        {
+          id: 'face',
+          label: '眨眼&疲劳检测',
+          tag: 'FACE',
+          desc: '实时摄像头监测眼部状态，EAR 指标与 PERCLOS 算法精准判断疲劳。',
+          color: '#14b8a6',
+          gradFrom: '#f0fdfa',
+          gradTo: '#ccfbf1',
+          icon: `<svg viewBox="0 0 64 64" class="w-10 h-10 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="32" cy="28" r="12" stroke="currentColor" stroke-width="2"/>
+            <circle cx="27" cy="26" r="2" fill="currentColor"><animate attributeName="cy" values="26;24;26" dur="3s" repeatCount="indefinite"/></circle>
+            <circle cx="37" cy="26" r="2" fill="currentColor"><animate attributeName="cy" values="26;24;26" dur="3s" repeatCount="indefinite"/></circle>
+            <path d="M27 32 Q32 36 37 32" stroke="currentColor" stroke-width="2"><animate attributeName="d" values="M27 32 Q32 36 37 32;M27 32 Q32 34 37 32;M27 32 Q32 36 37 32" dur="4s" repeatCount="indefinite"/></path>
+            <circle cx="32" cy="46" r="7" stroke="currentColor" stroke-width="1.5" opacity="0.5"><animate attributeName="r" values="7;9;7" dur="2s" repeatCount="indefinite"/></circle>
+          </svg>`
+        },
+        {
+          id: 'image',
+          label: 'OCR 情感分析',
+          tag: 'OCR',
+          desc: '识别图像中的文字内容，AI 大模型分析文本情感倾向，提供安慰与建议。',
+          color: '#8b5cf6',
+          gradFrom: '#faf5ff',
+          gradTo: '#ede9fe',
+          icon: `<svg viewBox="0 0 64 64" class="w-10 h-10 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="18" y="14" width="28" height="34" rx="3" stroke="currentColor" stroke-width="2"/>
+            <line x1="24" y1="24" x2="40" y2="24" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <line x1="24" y1="30" x2="36" y2="30" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <line x1="24" y1="36" x2="38" y2="36" stroke="currentColor" stroke-width="1.5" opacity="0.8"/>
+            <circle cx="32" cy="44" r="3" fill="currentColor" opacity="0.9"><animate attributeName="r" values="3;4.5;3" dur="2s" repeatCount="indefinite"/></circle>
+          </svg>`
+        },
+        {
+          id: 'rppg',
+          label: 'rPPG 心率估计',
+          tag: 'rPPG',
+          desc: '无接触式远程光体积描记，摄像头实时测量心率与 HRV，推断情绪紧张程度。',
+          color: '#ef4444',
+          gradFrom: '#fff1f2',
+          gradTo: '#ffe4e6',
+          icon: `<svg viewBox="0 0 64 64" class="w-10 h-10 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 32 L16 32 L20 20 L26 44 L32 28 L36 36 L40 32 L56 32" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <animate attributeName="stroke-dasharray" values="0 200;200 0" dur="1.8s" repeatCount="indefinite"/>
+            </path>
+          </svg>`
+        },
+        {
+          id: 'assessment',
+          label: '心理评估量表',
+          tag: 'ASSESSMENT',
+          desc: '100 道专业题目覆盖五大维度，生成可下载的心理健康报告。',
+          color: '#0891b2',
+          gradFrom: '#f0f9ff',
+          gradTo: '#e0f2fe',
+          icon: `<svg viewBox="0 0 64 64" class="w-10 h-10 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="16" y="14" width="32" height="36" rx="4" stroke="currentColor" stroke-width="2"/>
+            <rect x="22" y="10" width="20" height="8" rx="2" fill="currentColor" opacity="0.9"/>
+            <path d="M22 30 L28 36 L42 24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <animate attributeName="opacity" values="0.6;1;0.6" dur="1.5s" repeatCount="indefinite"/>
+            </path>
+          </svg>`
+        }
+      ];
+
+      const track     = document.getElementById('carousel-track');
+      const dotsEl    = document.getElementById('carousel-dots');
+      const prevBtn   = document.getElementById('carousel-prev');
+      const nextBtn   = document.getElementById('carousel-next');
+      if (!track || !dotsEl) return;
+
+      let current   = 0;
+      let autoTimer = null;
+      let isHovered = false;
+
+      // ── 渲染卡片 ──────────────────────────────────────────────
+      function buildCards() {
+        track.innerHTML = '';
+        MODULES.forEach(function(m, i) {
+          const card = document.createElement('div');
+          card.className = 'carousel-card absolute flex flex-col items-center justify-center text-center rounded-3xl p-8 cursor-pointer';
+          card.dataset.index = i;
+          card.style.cssText = `
+            width: 300px; height: 280px;
+            background: linear-gradient(135deg, ${m.gradFrom} 0%, ${m.gradTo} 100%);
+            border: 1.5px solid ${m.color}22;
+            box-shadow: 0 4px 24px ${m.color}18;
+            transition: transform 0.45s cubic-bezier(0.4,0,0.2,1),
+                        opacity  0.45s cubic-bezier(0.4,0,0.2,1),
+                        box-shadow 0.3s ease;
+            will-change: transform, opacity;
+          `;
+          card.innerHTML = `
+            <div class="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-md" style="background:linear-gradient(135deg,${m.color} 0%,${m.color}cc 100%)">
+              ${m.icon}
+            </div>
+            <div class="text-xs font-semibold tracking-widest mb-1" style="color:${m.color}99">${m.tag}</div>
+            <h3 class="text-lg font-bold text-gray-800 mb-2">${m.label}</h3>
+            <p class="text-gray-500 text-xs leading-relaxed mb-4 px-2">${m.desc}</p>
+            <button class="carousel-cta text-xs font-semibold px-4 py-1.5 rounded-full border-2 transition-all duration-200"
+              style="color:${m.color};border-color:${m.color}44"
+              data-feature="${m.id}">
+              立即使用 →
+            </button>
+          `;
+          track.appendChild(card);
+        });
+      }
+
+      // ── 指示器 ────────────────────────────────────────────────
+      function buildDots() {
+        dotsEl.innerHTML = '';
+        MODULES.forEach(function(_, i) {
+          const dot = document.createElement('button');
+          dot.className = 'carousel-dot w-2 h-2 rounded-full transition-all duration-300';
+          dot.style.background = '#d1d5db';
+          dot.setAttribute('aria-label', '切换到第' + (i+1) + '项');
+          dot.addEventListener('click', function() { goTo(i); });
+          dotsEl.appendChild(dot);
+        });
+      }
+
+      function updateDots() {
+        dotsEl.querySelectorAll('.carousel-dot').forEach(function(dot, i) {
+          if (i === current) {
+            dot.style.background = MODULES[current].color;
+            dot.style.width = '24px';
+            dot.style.borderRadius = '4px';
+            dot.style.animation = 'dotPulse 1.5s ease-in-out infinite';
+          } else {
+            dot.style.background = '#d1d5db';
+            dot.style.width = '8px';
+            dot.style.borderRadius = '50%';
+            dot.style.animation = 'none';
+          }
+        });
+      }
+
+      // ── 布局计算 ──────────────────────────────────────────────
+      function layout() {
+        const cards = track.querySelectorAll('.carousel-card');
+        const n = cards.length;
+        const containerW = track.offsetWidth;
+        const cardW = 300;
+        const sideOffset = Math.min(containerW * 0.38, 320);
+
+        cards.forEach(function(card, i) {
+          let offset = i - current;
+          // 循环处理
+          if (offset > n / 2)  offset -= n;
+          if (offset < -n / 2) offset += n;
+
+          const absOff = Math.abs(offset);
+          let tx, scale, opacity, zIndex, shadow;
+
+          if (offset === 0) {
+            tx = 0; scale = 1; opacity = 1; zIndex = 10;
+            shadow = `0 16px 48px ${MODULES[i].color}30`;
+          } else if (absOff === 1) {
+            tx = offset * sideOffset; scale = 0.85; opacity = 0.5; zIndex = 5;
+            shadow = `0 4px 16px rgba(0,0,0,0.08)`;
+          } else {
+            tx = offset * sideOffset * 1.1; scale = 0.72; opacity = 0; zIndex = 1;
+            shadow = 'none';
+          }
+
+          card.style.transform = `translateX(calc(-50% + ${tx}px)) scale(${scale})`;
+          card.style.opacity   = opacity;
+          card.style.zIndex    = zIndex;
+          card.style.boxShadow = shadow;
+          card.style.left      = '50%';
+          card.style.pointerEvents = absOff <= 1 ? 'auto' : 'none';
+        });
+      }
+
+      // ── 切换 ──────────────────────────────────────────────────
+      function goTo(idx) {
+        current = (idx + MODULES.length) % MODULES.length;
+        layout();
+        updateDots();
+      }
+
+      // ── 自动轮播 ──────────────────────────────────────────────
+      function startAuto() {
+        clearInterval(autoTimer);
+        autoTimer = setInterval(function() {
+          if (!isHovered) goTo(current + 1);
+        }, 3000);
+      }
+
+      function startAutoImmediate() {
+        clearInterval(autoTimer);
+        if (!isHovered) goTo(current + 1);
+        autoTimer = setInterval(function() {
+          if (!isHovered) goTo(current + 1);
+        }, 3000);
+      }
+
+      // ── 拖动 ──────────────────────────────────────────────────
+      let dragStartX = 0, dragDelta = 0, isDragging = false;
+
+      track.addEventListener('mousedown', function(e) {
+        isDragging = true; dragStartX = e.clientX; dragDelta = 0;
+        track.style.cursor = 'grabbing';
+      });
+      document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        dragDelta = e.clientX - dragStartX;
+      });
+      document.addEventListener('mouseup', function() {
+        if (!isDragging) return;
+        isDragging = false;
+        track.style.cursor = 'grab';
+        if (dragDelta < -50)      goTo(current + 1);
+        else if (dragDelta > 50)  goTo(current - 1);
+        startAuto();
+      });
+
+      // 触摸
+      track.addEventListener('touchstart', function(e) {
+        dragStartX = e.touches[0].clientX; dragDelta = 0;
+      }, { passive: true });
+      track.addEventListener('touchmove', function(e) {
+        dragDelta = e.touches[0].clientX - dragStartX;
+      }, { passive: true });
+      track.addEventListener('touchend', function() {
+        if (dragDelta < -40)      goTo(current + 1);
+        else if (dragDelta > 40)  goTo(current - 1);
+        startAuto();
+      });
+
+      // ── 箭头 ──────────────────────────────────────────────────
+      prevBtn && prevBtn.addEventListener('click', function() { goTo(current - 1); startAuto(); });
+      nextBtn && nextBtn.addEventListener('click', function() { goTo(current + 1); startAuto(); });
+
+      // ── 悬停暂停 ──────────────────────────────────────────────
+      const section = document.getElementById('carousel-section');
+      if (section) {
+        section.addEventListener('mouseenter', function() { isHovered = true; });
+        section.addEventListener('mouseleave', function() { isHovered = false; });
+      }
+
+      // ── 侧卡点击切换 ──────────────────────────────────────────
+      track.addEventListener('click', function(e) {
+        const card = e.target.closest('.carousel-card');
+        if (!card) return;
+        const idx = parseInt(card.dataset.index);
+        if (idx !== current) { goTo(idx); startAuto(); return; }
+        // 点击主卡片的 CTA 按钮
+        const cta = e.target.closest('.carousel-cta');
+        if (cta) {
+          const feature = cta.dataset.feature;
+          const analysisTool = document.getElementById('analysis-tool');
+          if (analysisTool) {
+            analysisTool.classList.remove('hidden');
+            analysisTool.scrollIntoView({ behavior: 'smooth' });
+          }
+          // 触发对应 tab
+          const tabBtn = document.querySelector(`.tab-btn[data-tab="${feature}"]`);
+          if (tabBtn) tabBtn.click();
+        }
+      });
+
+      // ── 键盘支持 ──────────────────────────────────────────────
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'ArrowLeft')  { goTo(current - 1); startAuto(); }
+        if (e.key === 'ArrowRight') { goTo(current + 1); startAuto(); }
+      });
+
+      // ── 窗口 resize ───────────────────────────────────────────
+      window.addEventListener('resize', layout);
+
+      // ── 初始化 ────────────────────────────────────────────────
+      buildCards();
+      buildDots();
+      layout();
+      updateDots();
+      startAutoImmediate();
+    })();
+    </script>
+
+    <!-- v1.2 微交互增强 -->
+    <script>
+    (function() {
+      // ── 按钮涟漪效果 ──────────────────────────────────────
+      document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-primary, .btn-secondary');
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width  * 100).toFixed(1) + '%';
+        const y = ((e.clientY - rect.top)  / rect.height * 100).toFixed(1) + '%';
+        btn.style.setProperty('--ripple-x', x);
+        btn.style.setProperty('--ripple-y', y);
+      });
+
+      // ── 加载文案轮换 ──────────────────────────────────────
+      const warmMessages = [
+        '正在分析中，请稍候…',
+        '小探正在认真聆听…',
+        '情绪解读中，马上就好…',
+        '正在感受您的声音…',
+        '分析即将完成，请稍等…'
+      ];
+      let msgIdx = 0, msgTimer = null;
+
+      function startWarmMessages(containerSelector) {
+        const el = document.querySelector(containerSelector + ' p.text-gray-500');
+        if (!el) return;
+        msgIdx = 0;
+        clearInterval(msgTimer);
+        msgTimer = setInterval(function() {
+          msgIdx = (msgIdx + 1) % warmMessages.length;
+          if (el && el.isConnected) el.textContent = warmMessages[msgIdx];
+          else clearInterval(msgTimer);
+        }, 2200);
+      }
+
+      // 监听分析按钮点击，启动文案轮换
+      ['analyze-audio-btn', 'analyze-image-btn'].forEach(function(id) {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', function() {
+          setTimeout(function() { startWarmMessages('#audio-placeholder, #image-placeholder'); }, 100);
+        });
+      });
+
+      // ── Tab 切换时重置动画 ────────────────────────────────
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.tab-btn').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const tabId = this.getAttribute('data-tab');
+            const pane = document.getElementById(tabId + '-tab');
+            if (pane) {
+              pane.style.animation = 'none';
+              pane.offsetHeight; // reflow
+              pane.style.animation = '';
+            }
+          });
+        });
+      });
+    })();
+    </script>
+</body>
+</html>

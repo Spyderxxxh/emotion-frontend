@@ -1,0 +1,17 @@
+[Unit]
+Description=EmotionFusion OCR & LLM Proxy Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/emotion
+Environment=PORT=5001
+# 可在此填入密钥或使用 /etc/default/emotion-ocr 环境文件
+Environment=MOONSHOT_API_KEY=sk-VPjdy5y7uXTygXPkHQQRHU51LMMPB8JnexOE2ME6JErJBxLP
+ExecStart=/opt/emotion-venv/bin/python /opt/emotion/ocr_server.py
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

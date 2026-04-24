@@ -1,0 +1,14 @@
+[Unit]
+Description=EmotionFusion Blink/Fatigue WS Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/emotion
+ExecStart=/opt/emotion-venv/bin/uvicorn blink_server:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
