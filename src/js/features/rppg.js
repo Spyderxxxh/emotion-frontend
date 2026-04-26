@@ -174,43 +174,52 @@ document.addEventListener('DOMContentLoaded', function() {
     // 放宽校验：只要有数据就先绘制
     if (!Array.isArray(values) || values.length === 0) return;
 
+    // 更新心率数值
+    const hrEl = document.getElementById('heart-rate-value');
+    if (hrEl) {
+        if (bpm) {
+            hrEl.textContent = Math.round(bpm);
+        } else if (values.length < 30) {
+            hrEl.textContent = '初始化...';
+        } else if (!hrEl.textContent || hrEl.textContent === '72') {
+            hrEl.textContent = '--';
+        }
+    }
+
     // 先绘制右侧实时波形，避免等待 fps/HRV
     if (!heartRateChart) {
         initHeartRateChart();
     }
     if (heartRateChart && typeof heartRateChart.draw === 'function') {
         const N = Math.min(values.length, 300);
-        const series = values.slice(values.length - N);
-        heartRateChart.draw(series);
+        const seriesData = values.slice(-N);
+        heartRateChart.draw(seriesData);
     }
 
-    // 再计算并更新 HRV 文本（fps 可能在初期为 0 或未就绪）
+    // 再计算并更新 HRV 文本
     const { rmssd, sdnn, peaksCount, rrCount } = computeRrMetrics(values, fps, bpm);
     const rmssdEl = document.getElementById('hrv-metric-rmssd');
     const sdnnEl = document.getElementById('hrv-metric-sdnn');
     if (rmssdEl) rmssdEl.textContent = rmssd ? `${(rmssd * 1000).toFixed(0)} ms` : '--';
     if (sdnnEl) sdnnEl.textContent = sdnn ? `${(sdnn * 1000).toFixed(0)} ms` : '--';
 
-    if (typeof rppgStatus !== 'undefined' && rppgStatus) {
+    if (typeof rppgStatus !== 'undefined' && rppgStatus && rppgActive) {
         if (!rmssd || !sdnn) {
-            rppgStatus.textContent = `HRV不可用：fps=${fps} 样本=${values.length} 峰=${peaksCount} RR=${rrCount}`;
+            rppgStatus.textContent = `信号稳定中: 样本数 ${values.length}/300 | 帧率 ${fps.toFixed(1)}`;
+            rppgStatus.classList.remove('hidden');
         } else {
-            rppgStatus.textContent = `HRV: RMSSD=${(rmssd * 1000).toFixed(0)}ms SDNN=${(sdnn * 1000).toFixed(0)}ms`;
+            rppgStatus.textContent = `实时 HRV: RMSSD ${(rmssd * 1000).toFixed(0)}ms | SDNN ${(sdnn * 1000).toFixed(0)}ms`;
         }
-    }
-    // 使用纯 Canvas 绘制，避免 Chart.js 触发 CSP
-    if (!heartRateChart) {
-      initHeartRateChart();
-    }
-    if (heartRateChart && typeof heartRateChart.draw === 'function') {
-      const N = Math.min(values.length, 300);
-      const series = values.slice(values.length - N);
-      heartRateChart.draw(series);
     }
   }
 
   startRppgBtn.addEventListener('click', async function() {
     if (rppgActive) return;
+    
+    // 初始化 UI 状态，清除硬编码的 72
+    const hrEl = document.getElementById('heart-rate-value');
+    if (hrEl) hrEl.textContent = '--';
+    
     rppgActive = true;
     startRppgBtn.classList.add('hidden');
     stopRppgBtn.classList.remove('hidden');
@@ -279,6 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function startLocalCameraFallback() {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
       .then(stream => {
+        console.log('[rPPG] 摄像头已启动');
         rppgStream = stream;
         const video = document.createElement('video');
         video.srcObject = stream;
@@ -291,8 +301,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // 添加叠加层 Canvas 用于绘制人脸框
         const overlay = document.createElement('canvas');
-        overlay.width = 640;
-        overlay.height = 480;
         overlay.style.width = '100%';
         overlay.style.height = '100%';
         overlay.style.position = 'absolute';
@@ -310,12 +318,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const offctx = offscreen.getContext('2d');
         const ctx = overlay.getContext('2d');
 
-        // 浏览器内置人脸检测（若可用）；避免引入 OpenCV 触发 CSP
-        const hasFaceDetector = typeof window.FaceDetector === 'function';
-        const faceDetector = hasFaceDetector ? new window.FaceDetector({ fastMode: true }) : null;
-        let lastDetect = 0;
-        let faces = [];
-
         initHeartRateChart();
 
         const series = [];
@@ -324,73 +326,110 @@ document.addEventListener('DOMContentLoaded', function() {
         let rafId = null;
 
         function measure() {
+          if (!rppgActive) return;
+
           // 同步尺寸
-          const vw = video.videoWidth || 640;
-          const vh = video.videoHeight || 480;
-          overlay.width = vw; overlay.height = vh;
-          offscreen.width = vw; offscreen.height = vh;
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          if (vw > 0 && (overlay.width !== vw || overlay.height !== vh)) {
+            overlay.width = vw;
+            overlay.height = vh;
+            offscreen.width = vw;
+            offscreen.height = vh;
+          }
+          
+          if (vw === 0) {
+            rafId = setTimeout(measure, sampleMs);
+            return;
+          }
+
           offctx.drawImage(video, 0, 0, vw, vh);
 
-          // 固定 ROI 在上中区域（额头附近），请用户把脸居中
+          // 固定 ROI 在上中区域（额头附近）
           const roiW = Math.round(vw * 0.22);
           const roiH = Math.round(vh * 0.12);
           const roiX = Math.round((vw - roiW) / 2);
           const roiY = Math.round(vh * 0.18);
-          const img = offctx.getImageData(roiX, roiY, roiW, roiH).data;
-          let gsum = 0; const pixels = roiW * roiH;
-          for (let i = 0; i < img.length; i += 4) gsum += img[i + 1];
+          
+          const imageData = offctx.getImageData(roiX, roiY, roiW, roiH);
+          const img = imageData.data;
+          let gsum = 0; 
+          const pixels = roiW * roiH;
+          for (let i = 0; i < img.length; i += 4) {
+            gsum += img[i + 1]; // 绿色通道
+          }
           const gmean = gsum / pixels;
 
           // 更新时序
           const now = performance.now();
           series.push(gmean);
           timestamps.push(now);
-          while (series.length > 30 * 4) { series.shift(); timestamps.shift(); }
-          const fps = series.length > 1 ? 1000 / ((timestamps[timestamps.length - 1] - timestamps[0]) / (series.length - 1)) : 0;
+          if (series.length > 30 * 10) { // 保留 10 秒数据
+            series.shift();
+            timestamps.shift();
+          }
+          
+          const fps = series.length > 1 ? (series.length - 1) * 1000 / (timestamps[timestamps.length - 1] - timestamps[0]) : 30;
 
-          // 估计 BPM（简单峰值估计）
-          const peaks = detectPeaks(series, Math.max(10, Math.min(60, Math.round(fps || 30))), null);
-          let bpm = null;
-          if (peaks.length >= 3 && fps) {
+          // 估计 BPM (脉搏频率)
+          const peaks = detectPeaks(series, Math.round(fps), null);
+          let bpmValue = null;
+          if (peaks.length >= 3) {
             const rr = [];
             for (let i = 1; i < peaks.length; i++) rr.push((peaks[i] - peaks[i - 1]) / fps);
             const meanRR = rr.reduce((s, v) => s + v, 0) / rr.length;
-            if (meanRR > 0.3 && meanRR < 2.5) bpm = Math.round(60 / meanRR);
+            if (meanRR > 0.3 && meanRR < 2.0) bpmValue = Math.round(60 / meanRR);
           }
 
-          // 右侧 HRV 文本与波形
-          updateHeartRateChartData(series.slice(), Math.round(fps || 30), bpm);
-          const hrEl = document.getElementById('heart-rate-value');
-          if (hrEl && bpm) hrEl.textContent = bpm;
+          // 统一更新 UI 状态 (包括心率值、右侧图表、HRV指标)
+          updateHeartRateChartData(series.slice(), Math.round(fps), bpmValue);
 
-          // 人脸检测与叠加绘制
+          // 绘制叠加层
           ctx.clearRect(0, 0, vw, vh);
-          const nowTs = performance.now();
-          if (faceDetector && nowTs - lastDetect > 100) {
-            lastDetect = nowTs;
-            try {
-              faceDetector.detect(video).then(result => {
-                faces = Array.isArray(result) ? result : [];
-              }).catch(() => { /* 忽略检测错误 */ });
-            } catch (e) { /* 某些浏览器可能抛出同步异常，忽略 */ }
-          }
-          if (faces && faces.length) {
-            ctx.strokeStyle = '#22c55e'; // 绿色人脸框
+          
+          // 绘制 ROI 框
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(roiX, roiY, roiW, roiH);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.font = '12px Arial';
+          ctx.fillText('监测区域 (额头)', roiX, roiY - 5);
+
+          // --- 实时信号波形渲染 ---
+          if (series.length > 10) {
+            const chartH = vh * 0.15;
+            const chartW = vw * 0.8;
+            const chartX = (vw - chartW) / 2;
+            const chartY = vh - chartH - 20;
+
+            // 绘制半透明背景
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(chartX, chartY, chartW, chartH);
+            
+            // 提取最近的 120 个样本 (约 4 秒)
+            const sub = series.slice(-120);
+            const minV = Math.min(...sub);
+            const maxV = Math.max(...sub);
+            const range = (maxV - minV) || 1;
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#00ff00';
             ctx.lineWidth = 2;
-            for (const f of faces) {
-              const bb = f.boundingBox || f;
-              const x = Math.max(0, Math.round(bb.x));
-              const y = Math.max(0, Math.round(bb.y));
-              const w = Math.max(1, Math.round(bb.width));
-              const h = Math.max(1, Math.round(bb.height));
-              ctx.strokeRect(x, y, w, h);
+            for (let i = 0; i < sub.length; i++) {
+              const px = chartX + (i / (sub.length - 1)) * chartW;
+              const py = chartY + chartH - ((sub[i] - minV) / range) * chartH;
+              if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
             }
+            ctx.stroke();
+            
+            ctx.fillStyle = '#00ff00';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText('实时生理脉搏信号 (Live Pulse)', chartX + 10, chartY + 20);
           }
 
           rafId = setTimeout(measure, sampleMs);
         }
 
-        // 启动采样
         measure();
       })
       .catch(error => {
@@ -403,37 +442,55 @@ document.addEventListener('DOMContentLoaded', function() {
     const canvas = document.getElementById('hrv-chart');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const W = canvas.clientWidth || 300;
-    const H = canvas.clientHeight || 150;
-    canvas.width = Math.max(W, 300);
-    canvas.height = Math.max(H, 150);
+    
+    // 获取实际显示尺寸并设置分辨率
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    
     heartRateChart = {
       ctx,
       canvas,
-      draw(series) {
-        const N = Math.min(series.length, canvas.width);
-        if (!N) return;
-        const sub = series.slice(series.length - N);
-        const minV = Math.min(...sub), maxV = Math.max(...sub);
-        const amp = (maxV - minV) || 1;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // 网格
-        ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+      draw(seriesData) {
+        if (!seriesData || seriesData.length < 2) return;
+        
+        const w = canvas.width;
+        const h = canvas.height;
+        
+        ctx.save();
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        const drawW = rect.width;
+        const drawH = rect.height;
+        
+        ctx.clearRect(0, 0, drawW, drawH);
+        
+        // 绘制背景网格
+        ctx.strokeStyle = 'rgba(0,0,0,0.05)';
         ctx.lineWidth = 1;
-        for (let i = 1; i <= 3; i++) {
-          const y = Math.round((i / 4) * canvas.height);
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        for (let i = 1; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, (i / 4) * drawH);
+          ctx.lineTo(drawW, (i / 4) * drawH);
+          ctx.stroke();
         }
-        // 曲线
+
+        // 归一化数据并绘制曲线
+        const minV = Math.min(...seriesData);
+        const maxV = Math.max(...seriesData);
+        const range = (maxV - minV) || 1;
+        
         ctx.beginPath();
-        for (let i = 0; i < N; i++) {
-          const x = (i / (N - 1)) * canvas.width;
-          const y = canvas.height - ((sub[i] - minV) / amp) * canvas.height;
+        ctx.strokeStyle = '#EF4444'; // 红色波形
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        
+        for (let i = 0; i < seriesData.length; i++) {
+          const x = (i / (seriesData.length - 1)) * drawW;
+          const y = drawH - ((seriesData[i] - minV) / range) * drawH;
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = '#EF4444';
-        ctx.lineWidth = 2;
         ctx.stroke();
+        ctx.restore();
       }
     };
   }
