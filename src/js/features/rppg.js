@@ -286,26 +286,27 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function startLocalCameraFallback() {
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+    console.log('[rPPG] 启动本地采样回退模式 (Compatible Mode v2)');
+    
+    navigator.mediaDevices.getUserMedia({ 
+      video: { 
+        facingMode: 'user',
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      } 
+    })
       .then(stream => {
-        console.log('[rPPG] 摄像头已启动');
         rppgStream = stream;
         const video = document.createElement('video');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('muted', '');
         video.srcObject = stream;
-        video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
-        video.style.width = '100%';
-        video.style.height = '100%';
-        video.style.objectFit = 'cover';
+        video.autoplay = true;
 
-        // 添加叠加层 Canvas 用于绘制人脸框
         const overlay = document.createElement('canvas');
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.position = 'absolute';
-        overlay.style.left = '0';
-        overlay.style.top = '0';
+        overlay.style.cssText = 'width:100%; height:100%; position:absolute; left:0; top:0; z-index:10; pointer-events:none;';
 
         if (cameraPreview) {
           cameraPreview.innerHTML = '';
@@ -314,36 +315,49 @@ document.addEventListener('DOMContentLoaded', function() {
           cameraPreview.appendChild(overlay);
         }
 
-        const offscreen = document.createElement('canvas');
-        const offctx = offscreen.getContext('2d');
-        const ctx = overlay.getContext('2d');
+        // 核心兼容性修复：等待元数据加载后再初始化
+        video.onloadedmetadata = () => {
+          video.play();
+          console.log('[rPPG] 视频流元数据已加载:', video.videoWidth, 'x', video.videoHeight);
+          initHeartRateChart();
+          startMeasureLoop(video, overlay);
+        };
+      })
+      .catch(error => {
+        console.error('获取相机权限失败:', error);
+        alert('无法访问摄像头，请确保已授予权限并使用 HTTPS 访问。');
+      });
+  }
 
-        initHeartRateChart();
+  function startMeasureLoop(video, overlay) {
+    const offscreen = document.createElement('canvas');
+    const offctx = offscreen.getContext('2d');
+    const ctx = overlay.getContext('2d');
+    const series = [];
+    const timestamps = [];
+    const sampleMs = 1000 / 30;
+    let rafId = null;
 
-        const series = [];
-        const timestamps = [];
-        const sampleMs = 1000 / 30; // 30fps 采样
-        let rafId = null;
+    function measure() {
+      if (!rppgActive) return;
 
-        function measure() {
-          if (!rppgActive) return;
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      
+      if (vw === 0 || vh === 0) {
+        rafId = setTimeout(measure, sampleMs);
+        return;
+      }
 
-          // 同步尺寸
-          const vw = video.videoWidth;
-          const vh = video.videoHeight;
-          if (vw > 0 && (overlay.width !== vw || overlay.height !== vh)) {
-            overlay.width = vw;
-            overlay.height = vh;
-            offscreen.width = vw;
-            offscreen.height = vh;
-          }
-          
-          if (vw === 0) {
-            rafId = setTimeout(measure, sampleMs);
-            return;
-          }
+      // 同步 Canvas 尺寸
+      if (overlay.width !== vw || overlay.height !== vh) {
+        overlay.width = vw;
+        overlay.height = vh;
+        offscreen.width = vw;
+        offscreen.height = vh;
+      }
 
-          offctx.drawImage(video, 0, 0, vw, vh);
+      offctx.drawImage(video, 0, 0, vw, vh);
 
           // 固定 ROI 在上中区域（额头附近）
           const roiW = Math.round(vw * 0.22);
@@ -429,14 +443,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
           rafId = setTimeout(measure, sampleMs);
         }
-
         measure();
-      })
-      .catch(error => {
-        console.error('获取相机权限失败:', error);
-        alert('获取相机权限失败，请确保您已授予权限。');
-      });
-  }
+      }
 
   function initHeartRateChart() {
     const canvas = document.getElementById('hrv-chart');
