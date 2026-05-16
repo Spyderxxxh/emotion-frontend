@@ -1423,4 +1423,3 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 });
-// rPPG 功能已添加
