@@ -53,8 +53,12 @@ document.addEventListener('DOMContentLoaded', function() {
         rppgCanvas.width = rppgVideo.videoWidth;
         rppgCanvas.height = rppgVideo.videoHeight;
 
+        const existingCanvas = rppgCameraPreview.querySelector('#rppg-waveform-canvas');
         rppgCameraPreview.innerHTML = '';
         rppgCameraPreview.appendChild(rppgVideo);
+        if (existingCanvas) {
+          rppgCameraPreview.appendChild(existingCanvas);
+        }
 
         startRppgBtn.classList.add('hidden');
         stopRppgBtn.classList.remove('hidden');

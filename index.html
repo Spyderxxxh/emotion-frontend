@@ -943,7 +943,7 @@
                                         <div class="bg-gray-100 rounded-lg p-4 text-center flex-1 flex flex-col">
                                             <div id="rppg-camera-preview" class="w-full flex-1 min-h-[260px] bg-gray-200 rounded-lg mb-4 flex items-center justify-center overflow-hidden relative">
                                                 <i class="fa fa-video-camera text-gray-400 text-4xl"></i>
-                                                <canvas id="rppg-waveform-canvas" class="absolute bottom-0 left-0 right-0 h-24 w-full"></canvas>
+                                                <canvas id="rppg-waveform-canvas" class="absolute bottom-0 left-0 right-0 h-24 w-full" style="z-index:10;"></canvas>
                                             </div>
                                             <p class="text-sm text-gray-600 mb-4">
                                                 将您的脸放在相机前，并确保光线良好以获得准确的测量结果。
@@ -2799,7 +2799,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260516_4"></script>
+    <script src="src/js/features/rppg.js?v=20260516_5"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
