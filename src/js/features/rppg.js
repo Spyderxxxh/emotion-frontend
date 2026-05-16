@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let rppgSignalBuffer = [];
   let rppgPeakTimes = [];
   let rppgRunning = false;
+  let rppgUpdateInterval = null;
   const RPPG_BUFFER_SIZE = 300;
 
   startRppgBtn.addEventListener('click', startRppg);
@@ -61,6 +62,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         rppgRunning = true;
         rppgProcessFrame();
+        rppgUpdateInterval = setInterval(rppgAnalyzeAndUpdate, 1000);
       };
     } catch (err) {
       console.error('rPPG 相机启动失败:', err);
@@ -73,6 +75,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (rppgAnimationId) {
       cancelAnimationFrame(rppgAnimationId);
       rppgAnimationId = null;
+    }
+    if (rppgUpdateInterval) {
+      clearInterval(rppgUpdateInterval);
+      rppgUpdateInterval = null;
     }
     if (rppgStream) {
       rppgStream.getTracks().forEach(track => track.stop());
@@ -114,10 +120,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (rppgSignalBuffer.length > RPPG_BUFFER_SIZE) {
       rppgSignalBuffer.shift();
-    }
-
-    if (rppgSignalBuffer.length >= 30) {
-      rppgAnalyzeAndUpdate();
     }
 
     rppgAnimationId = requestAnimationFrame(rppgProcessFrame);
