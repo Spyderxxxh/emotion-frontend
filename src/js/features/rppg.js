@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const hrvMetricSdnn = document.getElementById('hrv-metric-sdnn');
   const emotionalStateBar = document.getElementById('emotional-state-bar');
   const emotionalStateLabel = document.getElementById('emotional-state-label');
+  const waveformCanvas = document.getElementById('rppg-waveform-canvas');
+  const waveformCtx = waveformCanvas ? waveformCanvas.getContext('2d') : null;
 
   if (!startRppgBtn) return;
 
@@ -91,6 +93,56 @@ document.addEventListener('DOMContentLoaded', function() {
     if (rppgCameraPreview) {
       rppgCameraPreview.innerHTML = '<i class="fa fa-video-camera text-gray-400 text-4xl"></i>';
     }
+    clearWaveform();
+  }
+
+  function drawWaveform() {
+    if (!waveformCtx || !waveformCanvas) return;
+
+    const width = waveformCanvas.clientWidth;
+    const height = waveformCanvas.clientHeight;
+
+    if (waveformCanvas.width !== width || waveformCanvas.height !== height) {
+      waveformCanvas.width = width;
+      waveformCanvas.height = height;
+    }
+
+    const ctx = waveformCtx;
+    ctx.clearRect(0, 0, width, height);
+
+    const buffer = rppgSignalBuffer;
+    if (buffer.length < 2) return;
+
+    let mean = 0;
+    for (let i = 0; i < buffer.length; i++) mean += buffer[i];
+    mean /= buffer.length;
+
+    let max = -Infinity, min = Infinity;
+    for (let i = 0; i < buffer.length; i++) {
+      const val = buffer[i] - mean;
+      if (val > max) max = val;
+      if (val < min) min = val;
+    }
+    const range = max - min || 1;
+
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    for (let i = 0; i < buffer.length; i++) {
+      const x = (i / (buffer.length - 1)) * width;
+      const normalized = (buffer[i] - mean - min) / range;
+      const y = height - normalized * height * 0.8 - height * 0.1;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    ctx.stroke();
+  }
+
+  function clearWaveform() {
+    if (!waveformCtx || !waveformCanvas) return;
+    waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
   }
 
   function rppgProcessFrame() {
@@ -121,6 +173,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (rppgSignalBuffer.length > RPPG_BUFFER_SIZE) {
       rppgSignalBuffer.shift();
     }
+
+    drawWaveform();
 
     rppgAnimationId = requestAnimationFrame(rppgProcessFrame);
   }
