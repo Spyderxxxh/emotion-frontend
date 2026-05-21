@@ -227,93 +227,109 @@
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <!-- Header -->
-    <header class="bg-white shadow-sm sticky top-0 z-50">
-        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <div class="h-10 w-10 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #0891b2 0%, #14b8a6 100%);" aria-hidden="true">
+    <!-- Header - 专业版 -->
+    <header class="pro-nav sticky top-0 z-50">
+        <div class="container mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-3">
+                    <div class="h-10 w-10 rounded-xl gradient-bg flex items-center justify-center shadow-pro-md" aria-hidden="true">
                         <svg viewBox="0 0 32 32" class="w-6 h-6 text-white" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2" opacity="0.4"/>
                             <path d="M8 16 Q12 10 16 16 T24 16" stroke="currentColor" stroke-width="2.5" fill="none"/>
                             <circle cx="16" cy="16" r="3" fill="currentColor"/>
                         </svg>
                     </div>
-                <h1 class="text-2xl font-bold gradient-text" aria-label="多模心探">多模心探</h1>
-            </div>
-            <div class="flex items-center space-x-4">
-                <!-- User Profile -->
-                <div class="relative" id="user-profile">
-                    <button class="flex items-center space-x-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" id="profile-button" aria-haspopup="true" aria-expanded="false">
-                        <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-2 border-primary">
-                            <i class="fa fa-user text-gray-500 text-xl"></i>
-                            <img id="user-avatar" class="w-full h-full object-cover hidden" alt="User Avatar">
-                        </div>
-                        <span id="user-name" class="hidden md:inline-block text-gray-700 font-medium">用户</span>
-                        <i class="fa fa-caret-down text-gray-500"></i>
-                    </button>
-                    
-                    <!-- Profile Dropdown -->
-                    <div class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-2 hidden" id="profile-dropdown">
-                        <div class="px-4 py-2 border-b">
-                            <p class="text-sm text-gray-500">个人设置</p>
-                        </div>
-                        <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="change-avatar-btn">
-                            <i class="fa fa-camera mr-2 text-primary"></i> 更换头像
-                        </button>
-                        <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="change-name-btn">
-                            <i class="fa fa-pencil mr-2 text-primary"></i> 修改名字
-                        </button>
-                        <div class="px-4 py-2 border-t">
-                            <button class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100" id="logout-btn">
-                                <i class="fa fa-sign-out mr-2 text-red-500"></i> 退出
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Avatar Upload Input (Hidden) -->
-                    <input type="file" id="avatar-upload" name="avatar" class="hidden" accept="image/*">
+                    <h1 class="text-xl font-bold text-gray-800" aria-label="多模心探">多模心探</h1>
                 </div>
                 
-                <!-- Mobile Menu Button -->
-                <button class="md:hidden text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary rounded-lg p-1" id="mobile-menu-button" aria-label="打开菜单" aria-expanded="false">
-                    <i class="fa fa-bars text-xl" aria-hidden="true"></i>
-                </button>
+                <nav class="hidden md:flex items-center gap-8">
+                    <a href="#" class="text-gray-700 hover:text-primary font-medium transition-colors">首页</a>
+                    <a href="#features" class="text-gray-700 hover:text-primary font-medium transition-colors">功能</a>
+                    <a href="#about" class="text-gray-700 hover:text-primary font-medium transition-colors">关于</a>
+                    <a href="#contact" class="text-gray-700 hover:text-primary font-medium transition-colors">联系我们</a>
+                </nav>
+                
+                <div class="flex items-center gap-4">
+                    <button class="hidden md:block btn-tertiary text-sm py-2 px-4">
+                        <i class="fa fa-user-o mr-2"></i>登录
+                    </button>
+                    <button id="header-get-started-btn" class="btn-primary text-sm py-2 px-4">
+                        <i class="fa fa-rocket mr-2"></i>开始使用
+                    </button>
+                    
+                    <!-- Mobile Menu Button -->
+                    <button class="md:hidden text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary rounded-lg p-2" id="mobile-menu-button" aria-label="打开菜单" aria-expanded="false">
+                        <i class="fa fa-bars text-xl" aria-hidden="true"></i>
+                    </button>
+                </div>
             </div>
         </div>
         <!-- Mobile Menu -->
-        <div class="md:hidden hidden bg-white shadow-md absolute w-full z-50" id="mobile-menu">
-            <div class="container mx-auto px-4 py-2 flex flex-col space-y-3">
-                <a href="#" class="text-gray-700 hover:text-primary transition-colors py-2">首页</a>
-                <a href="#features" class="text-gray-700 hover:text-primary transition-colors py-2">功能</a>
-                <a href="#about" class="text-gray-700 hover:text-primary transition-colors py-2">关于</a>
-                <a href="#contact" class="text-gray-700 hover:text-primary transition-colors py-2">联系我们</a>
+        <div class="md:hidden hidden bg-white border-t border-gray-100 shadow-pro-md" id="mobile-menu">
+            <div class="container mx-auto px-4 py-4 flex flex-col gap-3">
+                <a href="#" class="text-gray-700 hover:text-primary font-medium py-2">首页</a>
+                <a href="#features" class="text-gray-700 hover:text-primary font-medium py-2">功能</a>
+                <a href="#about" class="text-gray-700 hover:text-primary font-medium py-2">关于</a>
+                <a href="#contact" class="text-gray-700 hover:text-primary font-medium py-2">联系我们</a>
+                <div class="pt-3 border-t border-gray-100">
+                    <button id="mobile-get-started-btn" class="btn-primary w-full text-sm py-2">开始使用</button>
+                </div>
             </div>
         </div>
     </header>
 
-    <!-- Hero Section -->
-    <section class="bg-gradient-to-br from-blue-50 to-purple-50 py-16 md:py-24">
-        <div class="container mx-auto px-4 flex flex-col md:flex-row items-center">
-            <div class="md:w-1/2 mb-8 md:mb-0" data-aos="fade-right">
-                <h1 class="text-4xl md:text-5xl font-bold mb-4">
-                    <span class="gradient-text">多模态情感</span>分析
-                </h1>
-                <p class="text-lg text-gray-600 mb-6">
-                    利用人工智能的力量，从图像、音频、视频和生理信号中分析情感。
-                    通过我们全面的分析平台，深入了解人类情感。
-                </p>
-                <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
-                    <button class="btn-primary" id="get-started-btn">
-                        <i class="fa fa-arrow-right mr-2"></i> 开始使用
-                    </button>
-                    <button class="btn-secondary" id="register-btn">
-                        <i class="fa fa-user-plus mr-2"></i> 注册账号
-                    </button>
+    <!-- Hero Section - 专业版 -->
+    <section class="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-20 md:py-28">
+        <!-- 装饰性背景元素 -->
+        <div class="absolute top-0 left-0 w-96 h-96 bg-primary-100 rounded-full blur-3xl opacity-40 -translate-x-1/2 -translate-y-1/2"></div>
+        <div class="absolute bottom-0 right-0 w-96 h-96 bg-secondary-100 rounded-full blur-3xl opacity-40 translate-x-1/2 translate-y-1/2"></div>
+        
+        <div class="container mx-auto px-4 relative z-10">
+            <div class="flex flex-col lg:flex-row items-center gap-12">
+                <div class="lg:w-1/2" data-aos="fade-up">
+                    <div class="inline-flex items-center gap-2 bg-primary-100 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+                        <i class="fa fa-sparkles"></i>
+                        专业的情感分析平台
+                    </div>
+                    <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+                        <span class="gradient-text">多模态情感</span><br>
+                        智能分析平台
+                    </h1>
+                    <p class="text-lg md:text-xl text-gray-600 mb-8 leading-relaxed">
+                        利用先进的人工智能技术，从图像、音频、视频和生理信号中进行情感分析。通过我们全面的专业平台，精准洞察人类情感状态。
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button class="btn-primary text-lg py-4 px-8 shadow-pro-lg" id="get-started-btn">
+                            <i class="fa fa-rocket mr-3"></i> 立即体验
+                        </button>
+                        <button class="btn-secondary text-lg py-4 px-8" id="register-btn">
+                            <i class="fa fa-play-circle-o mr-3"></i> 观看演示
+                        </button>
+                    </div>
+                    
+                    <!-- 信任标记 -->
+                    <div class="mt-10 pt-8 border-t border-gray-200">
+                        <p class="text-sm text-gray-500 mb-4">深受专业人士信赖</p>
+                        <div class="flex flex-wrap items-center gap-8 text-gray-400">
+                            <div class="flex items-center gap-2">
+                                <i class="fa fa-shield text-primary"></i>
+                                <span class="font-medium text-gray-600">数据安全</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa fa-check-circle text-primary"></i>
+                                <span class="font-medium text-gray-600">专业精准</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fa fa-clock-o text-primary"></i>
+                                <span class="font-medium text-gray-600">实时分析</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="md:w-1/2 flex justify-center" data-aos="fade-left">
-                <div class="w-full max-w-md rounded-lg shadow-xl bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-5">
-                    <svg viewBox="0 0 400 300" class="w-full h-auto scale-105" xmlns="http://www.w3.org/2000/svg">
+                
+                <div class="lg:w-1/2" data-aos="fade-up" data-aos-delay="200">
+                    <div class="pro-card pro-shadow-xl p-6 md:p-8">
+                        <svg viewBox="0 0 400 300" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
                         <!-- Background Circuit Pattern -->
                         <defs>
                             <linearGradient id="brainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -2024,25 +2040,29 @@
             updateTime();
             setInterval(updateTime, 1000);
 
-            // Get Started Button
+            // Get Started Buttons（多个入口）
             const getStartedBtn = document.getElementById('get-started-btn');
+            const headerGetStartedBtn = document.getElementById('header-get-started-btn');
+            const mobileGetStartedBtn = document.getElementById('mobile-get-started-btn');
 
-            if (getStartedBtn && analysisTool) {
-                getStartedBtn.addEventListener('click', function() {
-                    // 隐藏首页元素
-                    if (header) header.classList.add('hidden');
-                    if (heroSection) heroSection.classList.add('hidden');
-                    if (carouselSection) carouselSection.classList.add('hidden');
-                    if (featuresSection) featuresSection.classList.add('hidden');
-                    if (aboutSection) aboutSection.classList.add('hidden');
-                    if (contactSection) contactSection.classList.add('hidden');
-                    if (footer) footer.classList.add('hidden');
-                    
-                    // 显示功能模块
-                    analysisTool.classList.remove('hidden');
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                });
+            function enterPlatformMode() {
+                if (!analysisTool) return;
+                // 隐藏首页元素
+                if (header) header.classList.add('hidden');
+                if (heroSection) heroSection.classList.add('hidden');
+                if (carouselSection) carouselSection.classList.add('hidden');
+                if (featuresSection) featuresSection.classList.add('hidden');
+                if (aboutSection) aboutSection.classList.add('hidden');
+                if (contactSection) contactSection.classList.add('hidden');
+                if (footer) footer.classList.add('hidden');
+                // 显示功能模块
+                analysisTool.classList.remove('hidden');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             }
+
+            if (getStartedBtn) getStartedBtn.addEventListener('click', enterPlatformMode);
+            if (headerGetStartedBtn) headerGetStartedBtn.addEventListener('click', enterPlatformMode);
+            if (mobileGetStartedBtn) mobileGetStartedBtn.addEventListener('click', enterPlatformMode);
 
             // File Upload Visual Feedback
             function updateUploadArea(fileInput, hintEl, selectedEl, fileNameEl) {
@@ -3016,7 +3036,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260521_pro"></script>
+    <script src="src/js/features/rppg.js?v=20260521_home"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
