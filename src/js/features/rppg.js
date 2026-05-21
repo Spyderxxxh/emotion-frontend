@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const emotionalStateLabel = document.getElementById('emotional-state-label');
   const waveformCanvas = document.getElementById('rppg-waveform-canvas');
   const waveformCtx = waveformCanvas ? waveformCanvas.getContext('2d') : null;
+  const consentModal = document.getElementById('rppg-consent-modal');
+  const consentCheckbox = document.getElementById('rppg-consent-checkbox');
+  const consentCancel = document.getElementById('rppg-consent-cancel');
+  const consentConfirm = document.getElementById('rppg-consent-confirm');
 
   if (!startRppgBtn) return;
 
@@ -26,8 +30,41 @@ document.addEventListener('DOMContentLoaded', function() {
   let rppgUpdateInterval = null;
   const RPPG_BUFFER_SIZE = 300;
 
-  startRppgBtn.addEventListener('click', startRppg);
+  startRppgBtn.addEventListener('click', showConsentModal);
   stopRppgBtn.addEventListener('click', stopRppg);
+
+  if (consentCheckbox && consentConfirm) {
+    consentCheckbox.addEventListener('change', function() {
+      consentConfirm.disabled = !this.checked;
+    });
+  }
+  if (consentCancel) {
+    consentCancel.addEventListener('click', hideConsentModal);
+  }
+  if (consentConfirm) {
+    consentConfirm.addEventListener('click', function() {
+      hideConsentModal();
+      startRppg();
+    });
+  }
+
+  function showConsentModal() {
+    if (consentModal) {
+      consentModal.classList.remove('hidden');
+    }
+    if (consentCheckbox) {
+      consentCheckbox.checked = false;
+    }
+    if (consentConfirm) {
+      consentConfirm.disabled = true;
+    }
+  }
+
+  function hideConsentModal() {
+    if (consentModal) {
+      consentModal.classList.add('hidden');
+    }
+  }
 
   async function startRppg() {
     try {

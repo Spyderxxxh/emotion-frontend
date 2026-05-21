@@ -956,6 +956,31 @@
                                                     <i class="fa fa-stop mr-2"></i> 停止测量
                                                 </button>
                                             </div>
+
+                                            <!-- rPPG 授权告知弹窗 -->
+                                            <div id="rppg-consent-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+                                                <div class="bg-white rounded-xl p-6 max-w-md mx-4">
+                                                    <h3 class="text-lg font-semibold mb-4 text-gray-800">授权告知</h3>
+                                                    <p class="text-gray-600 mb-4 leading-relaxed">
+                                                        本网页将通过摄像头采集光电容积脉搏信号，计算心率、心率变异性（HRV）等生理数据，仅用于心理咨询情绪辅助参考，数据仅本次使用，不会长期存储或对外泄露。
+                                                    </p>
+                                                    <p class="text-gray-600 mb-4">
+                                                        请您同意或拒绝。
+                                                    </p>
+                                                    <div class="flex items-center mb-4">
+                                                        <input type="checkbox" id="rppg-consent-checkbox" class="w-4 h-4 text-primary mr-2">
+                                                        <label for="rppg-consent-checkbox" class="text-gray-700">我已阅读并同意</label>
+                                                    </div>
+                                                    <div class="flex space-x-3">
+                                                        <button type="button" id="rppg-consent-cancel" class="btn-secondary flex-1">
+                                                            拒绝
+                                                        </button>
+                                                        <button type="button" id="rppg-consent-confirm" class="btn-primary flex-1" disabled>
+                                                            同意
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
                                             <div id="rppg-status" class="mt-2 text-sm text-gray-500 hidden">
                                                 <span class="inline-block w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
                                                 正在测量...请保持静止。
@@ -2799,7 +2824,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260516_7"></script>
+    <script src="src/js/features/rppg.js?v=20260521"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
