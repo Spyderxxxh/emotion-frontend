@@ -286,6 +286,7 @@
         
         <div class="container mx-auto px-4 relative z-10">
             <div class="flex flex-col lg:flex-row items-center gap-12">
+                <!-- 左边：标题和按钮 -->
                 <div class="lg:w-1/2" data-aos="fade-up">
                     <div class="inline-flex items-center gap-2 bg-primary-100 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
                         <i class="fa fa-sparkles"></i>
@@ -298,7 +299,7 @@
                     <p class="text-lg md:text-xl text-gray-600 mb-8 leading-relaxed">
                         利用先进的人工智能技术，从图像、音频、视频和生理信号中进行情感分析。通过我们全面的专业平台，精准洞察人类情感状态。
                     </p>
-                    <div class="flex flex-col sm:flex-row gap-4 mb-12">
+                    <div class="flex flex-col sm:flex-row gap-4">
                         <button class="btn-primary text-lg py-4 px-8 shadow-pro-lg" id="get-started-btn">
                             <i class="fa fa-rocket mr-3"></i> 立即体验
                         </button>
@@ -306,15 +307,18 @@
                             <i class="fa fa-play-circle-o mr-3"></i> 观看演示
                         </button>
                     </div>
-                    
-                    <!-- 专业信任标记卡片 -->
+                </div>
+                
+                <!-- 右边：信任标记 + Logo 图（垂直排列） -->
+                <div class="lg:w-1/2 flex flex-col gap-6" data-aos="fade-up" data-aos-delay="200">
+                    <!-- 信任标记卡片 -->
                     <div>
-                        <p class="text-sm font-medium text-gray-500 mb-6 tracking-wide uppercase">深受专业人士信赖</p>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <p class="text-sm font-medium text-gray-500 mb-4 tracking-wide uppercase">深受专业人士信赖</p>
+                        <div class="grid grid-cols-1 gap-3">
                             <!-- 数据安全 -->
-                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
-                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
-                                    <i class="fa fa-shield text-white text-2xl"></i>
+                            <div class="pro-card p-4 flex items-center gap-4 card-hover">
+                                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-shield text-white text-xl"></i>
                                 </div>
                                 <div>
                                     <div class="font-bold text-gray-800">数据安全</div>
@@ -323,9 +327,9 @@
                             </div>
                             
                             <!-- 专业精准 -->
-                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
-                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
-                                    <i class="fa fa-check-circle text-white text-2xl"></i>
+                            <div class="pro-card p-4 flex items-center gap-4 card-hover">
+                                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-check-circle text-white text-xl"></i>
                                 </div>
                                 <div>
                                     <div class="font-bold text-gray-800">专业精准</div>
@@ -334,9 +338,9 @@
                             </div>
                             
                             <!-- 实时分析 -->
-                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
-                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-pro-md flex-shrink-0">
-                                    <i class="fa fa-bolt text-white text-2xl"></i>
+                            <div class="pro-card p-4 flex items-center gap-4 card-hover">
+                                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-bolt text-white text-xl"></i>
                                 </div>
                                 <div>
                                     <div class="font-bold text-gray-800">实时分析</div>
@@ -345,9 +349,8 @@
                             </div>
                         </div>
                     </div>
-                </div>
-                
-                <div class="lg:w-1/2" data-aos="fade-up" data-aos-delay="200">
+                    
+                    <!-- Logo 图 -->
                     <div class="pro-card pro-shadow-xl p-6 md:p-8">
                         <svg viewBox="0 0 400 300" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
                         <!-- Background Circuit Pattern -->
@@ -3056,7 +3059,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260521_trust"></script>
+    <script src="src/js/features/rppg.js?v=20260521_layout"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
