@@ -279,7 +279,7 @@
     </header>
 
     <!-- Hero Section - 专业版 -->
-    <section class="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-20 md:py-28">
+    <section id="hero-section" class="relative overflow-hidden bg-gradient-to-br from-primary-50 via-white to-secondary-50 py-20 md:py-28">
         <!-- 装饰性背景元素 -->
         <div class="absolute top-0 left-0 w-96 h-96 bg-primary-100 rounded-full blur-3xl opacity-40 -translate-x-1/2 -translate-y-1/2"></div>
         <div class="absolute bottom-0 right-0 w-96 h-96 bg-secondary-100 rounded-full blur-3xl opacity-40 translate-x-1/2 translate-y-1/2"></div>
@@ -298,7 +298,7 @@
                     <p class="text-lg md:text-xl text-gray-600 mb-8 leading-relaxed">
                         利用先进的人工智能技术，从图像、音频、视频和生理信号中进行情感分析。通过我们全面的专业平台，精准洞察人类情感状态。
                     </p>
-                    <div class="flex flex-col sm:flex-row gap-4">
+                    <div class="flex flex-col sm:flex-row gap-4 mb-12">
                         <button class="btn-primary text-lg py-4 px-8 shadow-pro-lg" id="get-started-btn">
                             <i class="fa fa-rocket mr-3"></i> 立即体验
                         </button>
@@ -307,21 +307,41 @@
                         </button>
                     </div>
                     
-                    <!-- 信任标记 -->
-                    <div class="mt-10 pt-8 border-t border-gray-200">
-                        <p class="text-sm text-gray-500 mb-4">深受专业人士信赖</p>
-                        <div class="flex flex-wrap items-center gap-8 text-gray-400">
-                            <div class="flex items-center gap-2">
-                                <i class="fa fa-shield text-primary"></i>
-                                <span class="font-medium text-gray-600">数据安全</span>
+                    <!-- 专业信任标记卡片 -->
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 mb-6 tracking-wide uppercase">深受专业人士信赖</p>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <!-- 数据安全 -->
+                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-shield text-white text-2xl"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-gray-800">数据安全</div>
+                                    <div class="text-sm text-gray-500">端到端加密处理</div>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <i class="fa fa-check-circle text-primary"></i>
-                                <span class="font-medium text-gray-600">专业精准</span>
+                            
+                            <!-- 专业精准 -->
+                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-check-circle text-white text-2xl"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-gray-800">专业精准</div>
+                                    <div class="text-sm text-gray-500">AI 智能算法加持</div>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <i class="fa fa-clock-o text-primary"></i>
-                                <span class="font-medium text-gray-600">实时分析</span>
+                            
+                            <!-- 实时分析 -->
+                            <div class="pro-card p-5 flex items-center gap-4 card-hover">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shadow-pro-md flex-shrink-0">
+                                    <i class="fa fa-bolt text-white text-2xl"></i>
+                                </div>
+                                <div>
+                                    <div class="font-bold text-gray-800">实时分析</div>
+                                    <div class="text-sm text-gray-500">毫秒级响应速度</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1965,7 +1985,7 @@
 
             // 平台模式：隐藏/显示首页和功能模块
             const header = document.querySelector('header');
-            const heroSection = document.querySelector('.bg-gradient-to-br');
+            const heroSection = document.getElementById('hero-section');
             const carouselSection = document.getElementById('carousel-section');
             const featuresSection = document.getElementById('features');
             const aboutSection = document.getElementById('about');
@@ -3036,7 +3056,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260521_home"></script>
+    <script src="src/js/features/rppg.js?v=20260521_trust"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
