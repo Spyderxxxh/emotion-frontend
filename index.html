@@ -309,10 +309,10 @@
                     </div>
                 </div>
                 
-                <!-- 右边：信任标记 + Logo 图（垂直排列） -->
-                <div class="lg:w-1/2 flex flex-col gap-6" data-aos="fade-up" data-aos-delay="200">
-                    <!-- 信任标记卡片 -->
-                    <div>
+                <!-- 右边：信任标记（左） + Logo 图（右） -->
+                <div class="lg:w-1/2 flex flex-col lg:flex-row gap-6" data-aos="fade-up" data-aos-delay="200">
+                    <!-- 信任标记卡片（左边） -->
+                    <div class="lg:w-1/2">
                         <p class="text-sm font-medium text-gray-500 mb-4 tracking-wide uppercase">深受专业人士信赖</p>
                         <div class="grid grid-cols-1 gap-3">
                             <!-- 数据安全 -->
@@ -350,9 +350,10 @@
                         </div>
                     </div>
                     
-                    <!-- Logo 图 -->
-                    <div class="pro-card pro-shadow-xl p-6 md:p-8">
-                        <svg viewBox="0 0 400 300" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Logo 图（右边） -->
+                    <div class="lg:w-1/2">
+                        <div class="pro-card pro-shadow-xl p-6 md:p-8 h-full">
+                            <svg viewBox="0 0 400 300" class="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
                         <!-- Background Circuit Pattern -->
                         <defs>
                             <linearGradient id="brainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -3059,7 +3060,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260521_layout"></script>
+    <script src="src/js/features/rppg.js?v=20260521_right"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
