@@ -362,13 +362,24 @@
     </section>
 
     <!-- Analysis Tool Section -->
-    <section id="analysis-tool" class="py-16 bg-gray-50 hidden">
-        <div class="container mx-auto px-4">
-            <div class="text-center mb-12">
-                <h2 class="text-3xl font-bold mb-4">情感 <span class="gradient-text">分析工具</span></h2>
-                <p class="text-gray-600 max-w-2xl mx-auto">
-                    选择以下分析类型，开始从您的数据中探索情感洞察。
-                </p>
+    <section id="analysis-tool" class="min-h-screen bg-gray-50 hidden">
+        <div class="container mx-auto px-4 py-6">
+            <!-- 平台导航栏 -->
+            <div class="flex items-center justify-between mb-8 bg-white rounded-xl shadow-sm p-4">
+                <div class="flex items-center">
+                    <button id="back-to-home" class="flex items-center gap-2 text-gray-600 hover:text-primary transition-colors mr-6">
+                        <i class="fa fa-arrow-left text-lg"></i>
+                        <span class="font-medium">返回首页</span>
+                    </button>
+                    <div class="h-8 w-px bg-gray-200 mr-6"></div>
+                    <h2 class="text-xl font-bold gradient-text">多模态情感分析平台</h2>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-sm text-gray-500">
+                        <i class="fa fa-clock-o mr-1"></i>
+                        <span id="current-time"></span>
+                    </div>
+                </div>
             </div>
             
             <!-- Tabs Navigation - 优化版：桌面端图标+文字，移动端下拉 -->
@@ -1819,18 +1830,38 @@
                 });
             }
 
-            // Feature Buttons
-            const featureButtons = document.querySelectorAll('.feature-btn');
+            // 平台模式：隐藏/显示首页和功能模块
+            const header = document.querySelector('header');
+            const heroSection = document.querySelector('.bg-gradient-to-br');
+            const carouselSection = document.getElementById('carousel-section');
+            const featuresSection = document.getElementById('features');
+            const aboutSection = document.getElementById('about');
+            const contactSection = document.getElementById('contact');
+            const footer = document.querySelector('footer');
+            const backToHomeBtn = document.getElementById('back-to-home');
+            const currentTimeEl = document.getElementById('current-time');
             const analysisTool = document.getElementById('analysis-tool');
+
+            // Feature Buttons - 平台模式
+            const featureButtons = document.querySelectorAll('.feature-btn');
             
             if (featureButtons.length > 0 && analysisTool) {
                 featureButtons.forEach(button => {
                     button.addEventListener('click', function() {
                         const feature = this.getAttribute('data-feature');
                         
-                        // Scroll to analysis tool
-                        analysisTool.scrollIntoView({ behavior: 'smooth' });
+                        // 隐藏首页所有元素
+                        if (header) header.classList.add('hidden');
+                        if (heroSection) heroSection.classList.add('hidden');
+                        if (carouselSection) carouselSection.classList.add('hidden');
+                        if (featuresSection) featuresSection.classList.add('hidden');
+                        if (aboutSection) aboutSection.classList.add('hidden');
+                        if (contactSection) contactSection.classList.add('hidden');
+                        if (footer) footer.classList.add('hidden');
+                        
+                        // 显示功能模块平台
                         analysisTool.classList.remove('hidden');
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
                         
                         // Activate corresponding tab
                         tabButtons.forEach(btn => {
@@ -1841,14 +1872,58 @@
                     });
                 });
             }
-            
+
+            // 返回首页功能
+            if (backToHomeBtn) {
+                backToHomeBtn.addEventListener('click', function() {
+                    // 显示首页元素
+                    if (header) header.classList.remove('hidden');
+                    if (heroSection) heroSection.classList.remove('hidden');
+                    if (carouselSection) carouselSection.classList.remove('hidden');
+                    if (featuresSection) featuresSection.classList.remove('hidden');
+                    if (aboutSection) aboutSection.classList.remove('hidden');
+                    if (contactSection) contactSection.classList.remove('hidden');
+                    if (footer) footer.classList.remove('hidden');
+                    
+                    // 隐藏功能模块
+                    if (analysisTool) analysisTool.classList.add('hidden');
+                    
+                    // 滚动到顶部
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            }
+
+            // 更新当前时间
+            function updateTime() {
+                if (currentTimeEl) {
+                    const now = new Date();
+                    currentTimeEl.textContent = now.toLocaleTimeString('zh-CN', { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        hour12: false 
+                    });
+                }
+            }
+            updateTime();
+            setInterval(updateTime, 1000);
+
             // Get Started Button
             const getStartedBtn = document.getElementById('get-started-btn');
 
             if (getStartedBtn && analysisTool) {
                 getStartedBtn.addEventListener('click', function() {
-                    analysisTool.scrollIntoView({ behavior: 'smooth' });
+                    // 隐藏首页元素
+                    if (header) header.classList.add('hidden');
+                    if (heroSection) heroSection.classList.add('hidden');
+                    if (carouselSection) carouselSection.classList.add('hidden');
+                    if (featuresSection) featuresSection.classList.add('hidden');
+                    if (aboutSection) aboutSection.classList.add('hidden');
+                    if (contactSection) contactSection.classList.add('hidden');
+                    if (footer) footer.classList.add('hidden');
+                    
+                    // 显示功能模块
                     analysisTool.classList.remove('hidden');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 });
             }
 
@@ -2824,7 +2899,7 @@
     <script src="src/js/features/image.js?v=20260516"></script>
     <!-- Heartbeat rPPG 本地实现（依赖 OpenCV.js） -->
     <!-- <script src="js/heartbeat.js"></script> -->
-    <script src="src/js/features/rppg.js?v=20260521"></script>
+    <script src="src/js/features/rppg.js?v=20260521_2"></script>
     <script src="src/js/modules/profile.js?v=20260516"></script>
     <script src="src/js/modules/auth.js"></script>
     <script src="src/js/modules/assessment.js"></script>
@@ -3094,15 +3169,33 @@
         if (!card) return;
         const idx = parseInt(card.dataset.index);
         if (idx !== current) { goTo(idx); startAuto(); return; }
-        // 点击主卡片的 CTA 按钮
+        // 点击主卡片的 CTA 按钮 - 平台模式
         const cta = e.target.closest('.carousel-cta');
         if (cta) {
           const feature = cta.dataset.feature;
           const analysisTool = document.getElementById('analysis-tool');
-          if (analysisTool) {
-            analysisTool.classList.remove('hidden');
-            analysisTool.scrollIntoView({ behavior: 'smooth' });
-          }
+          
+          // 隐藏首页所有元素
+          const header = document.querySelector('header');
+          const heroSection = document.querySelector('.bg-gradient-to-br');
+          const carouselSection = document.getElementById('carousel-section');
+          const featuresSection = document.getElementById('features');
+          const aboutSection = document.getElementById('about');
+          const contactSection = document.getElementById('contact');
+          const footer = document.querySelector('footer');
+          
+          if (header) header.classList.add('hidden');
+          if (heroSection) heroSection.classList.add('hidden');
+          if (carouselSection) carouselSection.classList.add('hidden');
+          if (featuresSection) featuresSection.classList.add('hidden');
+          if (aboutSection) aboutSection.classList.add('hidden');
+          if (contactSection) contactSection.classList.add('hidden');
+          if (footer) footer.classList.add('hidden');
+          
+          // 显示功能模块平台
+          if (analysisTool) analysisTool.classList.remove('hidden');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          
           // 触发对应 tab
           const tabBtn = document.querySelector(`.tab-btn[data-tab="${feature}"]`);
           if (tabBtn) tabBtn.click();
